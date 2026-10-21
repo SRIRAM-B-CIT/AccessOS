@@ -19,14 +19,14 @@ After running `ACCESSOS_WINDOWED=1 python3 -m accessos`:
 ### Visual tests
 - [ ] Window opens maximised with dark (#0d1117) background
 - [ ] AccessOS title and subtitle visible in the header
-- [ ] Six buttons visible in a 3×2 grid with icons and labels
+- [ ] Six buttons visible in a centered macOS-style bottom dock with icons and labels
 - [ ] Status bar visible at the bottom (mode, state, battery, network, time)
 - [ ] Pause and Power buttons visible in the header
 
 ### Keyboard navigation
 - [ ] Tab moves focus forward through buttons (visible blue focus ring)
 - [ ] Shift+Tab moves focus backward
-- [ ] Arrow keys navigate the 3×2 grid (Right/Left within row, Up/Down between rows)
+- [ ] Arrow keys navigate the centered macOS-style bottom dock (Right/Left within row, Up/Down between rows)
 - [ ] Enter / Space activates the focused button
 - [ ] Esc toggles pause / resume
 - [ ] Pause banner slides in below the header when paused

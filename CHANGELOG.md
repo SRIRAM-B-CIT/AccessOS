@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.2.0] - Phase 2: Settings Application & System Control
 
+### Corrected & Verified (Phase 2 Post-Review)
+- **Centered macOS-Style Bottom Dock**: Converted the launcher from a 6-card grid to a centered macOS-style bottom dock with frosted-glass container styling, high-contrast outlines, and horizontal wrap-around keyboard navigation (`Left`/`Right`/`Home`/`End`/`1`-`6`). The top status bar remains compact and the dock is the sole application launcher.
+- **Hardware-Verified Camera Metadata**: Corrected camera discovery to read device metadata dynamically from USB sysfs without vendor assumptions (`/dev/video2`: Chicony Electronics Co.,Ltd. Integrated Camera; `/dev/video0`: SunplusIT Inc Integrated IR Camera).
+- **Wi-Fi Credential Protection**: Passwords are piped exclusively via `stdin` to `nmcli --ask`, preventing credential exposure in `ps aux`, `/proc/<pid>/cmdline`, or shell histories.
+- **Safe Permission Rejection**: All system controls (reboot, shutdown, lock, brightness, volume, Wi-Fi) fail safely with actionable user feedback on denied permissions.
+
 ### Added
 - **AccessOS Settings Application** (`accessos.settings.SettingsWindow`):
   - Accessible multi-tabbed preferences center (Accessibility, Display, Sound, Camera, Wi-Fi, System & Power).

@@ -395,3 +395,56 @@ scale slider {
     border-color: #4f9eff;
     color: #ffffff;
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * macOS-Style Centered Bottom Dock
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.dock-wrapper {
+    background: transparent;
+    padding-bottom: 24px;
+}
+
+.dock-container {
+    background-color: rgba(13, 17, 23, 0.88);
+    border: 1.5px solid rgba(255, 255, 255, 0.14);
+    border-radius: 28px;
+    padding: 10px 18px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.dock-item {
+    background-color: transparent;
+    border: 3px solid transparent;
+    border-radius: 20px;
+    padding: 8px 14px;
+    min-width: 88px;
+    min-height: 94px;
+    transition: all 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.dock-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(79, 158, 255, 0.45);
+    box-shadow: 0 4px 14px rgba(79, 158, 255, 0.25);
+}
+
+.dock-item:focus {
+    background-color: rgba(33, 38, 45, 0.95);
+    border-color: #4f9eff;
+    box-shadow: 0 0 0 3px rgba(79, 158, 255, 0.45), 0 6px 18px rgba(0, 0, 0, 0.5);
+    outline: none;
+}
+
+.dock-label {
+    color: #e6edf3;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.dock-item:focus .dock-label {
+    color: #ffffff;
+    font-weight: bold;
+}

@@ -95,8 +95,11 @@ class PowerMenu(Gtk.Dialog):
                 is_destructive=False,
             )
             if confirmed:
-                SystemControl.lock_session()
-                self.response(Gtk.ResponseType.OK)
+                ok, msg = SystemControl.lock_session()
+                if not ok:
+                    self._show_error("Lock Failed", msg)
+                else:
+                    self.response(Gtk.ResponseType.OK)
 
         elif key == "restart":
             confirmed = ConfirmDialog.ask(
@@ -108,8 +111,11 @@ class PowerMenu(Gtk.Dialog):
                 is_destructive=True,
             )
             if confirmed:
-                SystemControl.restart_system()
-                self.response(Gtk.ResponseType.OK)
+                ok, msg = SystemControl.restart_system()
+                if not ok:
+                    self._show_error("Restart Failed", msg)
+                else:
+                    self.response(Gtk.ResponseType.OK)
 
         elif key == "shutdown":
             confirmed = ConfirmDialog.ask(
@@ -121,5 +127,20 @@ class PowerMenu(Gtk.Dialog):
                 is_destructive=True,
             )
             if confirmed:
-                SystemControl.poweroff_system()
-                self.response(Gtk.ResponseType.OK)
+                ok, msg = SystemControl.poweroff_system()
+                if not ok:
+                    self._show_error("Shutdown Failed", msg)
+                else:
+                    self.response(Gtk.ResponseType.OK)
+
+    def _show_error(self, title: str, message: str) -> None:
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dlg.format_secondary_text(message)
+        dlg.run()
+        dlg.destroy()

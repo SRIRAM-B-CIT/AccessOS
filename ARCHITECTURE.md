@@ -102,3 +102,9 @@ Built-in Python defaults (_DEFAULTS dict)
 ## File layout
 
 See README.md § Project structure.
+
+
+## Security & Permission Boundaries (Phase 2)
+1. **Wi-Fi Credential Isolation**: Network passwords are never passed via `argv` (process command line), environment variables, logs, or persistent configuration files. Credentials are typed directly into a secure memory buffer and transmitted to `nmcli --ask` exclusively via standard input (`stdin`).
+2. **Safe Permission Failures**: Privileged actions (reboot, shutdown, session lock, brightness, audio, Wi-Fi) fail safely with explicit, human-readable error dialogs if Polkit authorization or system permission is denied.
+3. **Camera Privacy**: No video streams or frame captures are opened during discovery. Device enumeration is performed strictly via read-only sysfs queries.

@@ -684,7 +684,9 @@ class SettingsWindow(Gtk.Window):
             is_destructive=False,
         )
         if confirmed:
-            SystemControl.lock_session()
+            ok, msg = SystemControl.lock_session()
+            if not ok:
+                self._show_system_error("Lock Failed", msg)
 
     def _on_restart_clicked(self, _btn: Gtk.Button) -> None:
         confirmed = ConfirmDialog.ask(
@@ -696,7 +698,9 @@ class SettingsWindow(Gtk.Window):
             is_destructive=True,
         )
         if confirmed:
-            SystemControl.restart_system()
+            ok, msg = SystemControl.restart_system()
+            if not ok:
+                self._show_system_error("Restart Failed", msg)
 
     def _on_poweroff_clicked(self, _btn: Gtk.Button) -> None:
         confirmed = ConfirmDialog.ask(
@@ -708,7 +712,23 @@ class SettingsWindow(Gtk.Window):
             is_destructive=True,
         )
         if confirmed:
-            SystemControl.poweroff_system()
+            ok, msg = SystemControl.poweroff_system()
+            if not ok:
+                self._show_system_error("Shutdown Failed", msg)
+
+    def _show_system_error(self, title: str, message: str) -> None:
+        log.warning("System control error: %s — %s", title, message)
+        self._audio.play("error")
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dlg.format_secondary_text(message)
+        dlg.run()
+        dlg.destroy()
 
     # ── Keyboard Handling ──────────────────────────────────────────────────────
 

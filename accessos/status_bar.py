@@ -42,6 +42,7 @@ class StatusBar:
     def __init__(self) -> None:
         self._paused       = False
         self._focused_name = ""
+        self._active_mode  = "Keyboard & Mouse"
         self._build()
         self._update()
         GLib.timeout_add(_UPDATE_INTERVAL_MS, self._on_timer)
@@ -56,6 +57,11 @@ class StatusBar:
     def set_paused(self, paused: bool) -> None:
         """Update the active/paused state indicator."""
         self._paused = paused
+        self._update_state()
+
+    def set_active_mode(self, mode: str) -> None:
+        """Update active accessibility mode name."""
+        self._active_mode = mode
         self._update_state()
 
     def set_focused_item(self, name: str) -> None:
@@ -135,8 +141,9 @@ class StatusBar:
         self._update_clock()
 
     def _update_state(self) -> None:
+        esc_mode = GLib.markup_escape_text(self._active_mode)
         self._lbl_mode.set_markup(
-            '<span color="#9fa8da" size="small">⌨  Keyboard / Mouse</span>'
+            f'<span color="#9fa8da" size="small">⌨  {esc_mode}</span>'
         )
         if self._paused:
             self._lbl_state.set_markup(
