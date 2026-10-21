@@ -1,3 +1,31 @@
+
+## [Phase 4] - 2026-10-21 - Offline Voice Control & Speech Synthesis
+
+### Added
+- **Offline Speech Recognition (Vosk)**:
+  - Streaming Kaldi recognizer running locally on 16kHz audio from ALSA `arecord`.
+  - Grammar restriction constrained strictly to approved command phrases.
+  - Zero disk writing or cloud transmission of voice data or transcripts.
+  - Disabled by default; requires explicit user consent dialog before activating microphone.
+- **Offline Speech Synthesis (Piper TTS)**:
+  - Low-latency neural speech synthesis via ONNX runtime model `en_US-lessac-low.onnx`.
+  - In-memory WAV synthesis streamed directly to ALSA `aplay -q`.
+  - Asynchronous background worker queue prevents UI thread blocking.
+- **Strict Command Allowlisting**:
+  - Direct actions: `open browser`, `files`, `terminal`, `settings`, `images`, `videos`, `go home`, `pause control`, `resume control`, `stop tracking`, `read status`, `help`, `volume up`, `volume down`.
+  - Defense-in-depth prohibition of dangerous tokens (`sudo`, `rm`, `bash`, `delete`, `install`, etc.).
+  - Recognized speech is never passed to shell or terminal.
+- **Spoken Confirmation State Machine**:
+  - `restart` and `shutdown` voice commands enter `AWAITING_CONFIRMATION` state.
+  - Spoken confirmation required (`confirm`/`yes`); abort on `cancel`/`no` or 10-second timeout.
+- **Voice HUD & Keyboard Mute**:
+  - Visual status pill indicating Active, Muted, Awaiting Confirmation, Error, or Off.
+  - Auto-clearing command toast displaying recognized actions.
+  - Keyboard shortcut <kbd>M</kbd> toggles microphone mute instantly.
+- **Test Suite & Benchmarks**:
+  - 13 new unit and integration tests covering allowlists, token rejections, mic failure, confirmation state machine, and HUD styling (63 total passing tests).
+  - Automated benchmark suite `scripts/benchmark_phase4.py` measuring Piper synthesis speed (0.053x RTF, 183ms latency), Vosk decoding (0% CPU idle, ~1.5ms grammar init), and process memory (~340MB peak).
+
 # Changelog
 
 All notable changes to AccessOS are documented here.

@@ -506,3 +506,45 @@ scale slider {
     border-color: #4f9eff;
     color: #ffffff;
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Phase 4 · Voice Control HUD & Status
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.voice-hud {
+    background-color: rgba(22, 27, 34, 0.85);
+    border: 1px solid #30363d;
+    border-radius: 20px;
+    padding: 4px 12px;
+}
+
+.voice-active {
+    background-color: rgba(35, 134, 54, 0.25);
+    border: 1px solid #3fb950;
+    color: #3fb950;
+}
+
+.voice-muted {
+    background-color: rgba(187, 128, 9, 0.25);
+    border: 1px solid #d29922;
+    color: #ffd700;
+}
+
+.voice-waiting {
+    background-color: rgba(210, 153, 34, 0.3);
+    border: 1px solid #e3b341;
+    color: #ffd166;
+}
+
+.voice-error {
+    background-color: rgba(218, 54, 51, 0.25);
+    border: 1px solid #f85149;
+    color: #ff7b72;
+}
+
+.voice-off {
+    background-color: rgba(33, 38, 45, 0.5);
+    border: 1px solid #30363d;
+    color: #8b949e;
+}

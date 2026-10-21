@@ -90,3 +90,58 @@ pytest tests/ -v
    - Observe immediate transition to `⏸ CONTROL PAUSED`.
    - Press <kbd>Esc</kbd> again to resume.
 11. Click **[⏹ Stop Tracking]** to release the webcam cleanly.
+
+## Phase 4 Verification: Offline Voice Control & Piper Speech Synthesis
+
+### Automated Tests
+Run the automated test suite including all Phase 4 voice tests:
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_voice_control.py -v
+PYTHONPATH=. .venv/bin/pytest
+```
+
+### Performance & Resource Benchmark
+Run the Phase 4 hardware benchmark on the ThinkPad T480:
+```bash
+PYTHONPATH=. .venv/bin/python3 scripts/benchmark_phase4.py
+```
+Expected performance:
+- Piper TTS synthesis latency: ~60ms - 200ms per utterance (Real-Time Factor < 0.1x).
+- Vosk grammar initialization latency: ~1.5ms.
+- Vosk decoding CPU utilization: < 5% CPU on Intel Core i5.
+- RAM footprint: ~340 MB RSS total for combined Piper + Vosk engines.
+
+### Manual Verification Steps
+1. Launch AccessOS in windowed mode:
+   ```bash
+   ACCESSOS_WINDOWED=1 PYTHONPATH=. .venv/bin/python3 -m accessos
+   ```
+2. **Verify Default Disabled State**:
+   - Notice the Voice HUD status badge displays `🎙️ Voice: OFF`.
+   - The microphone is completely inactive; no audio is recorded.
+3. **Explicit Consent Flow**:
+   - Click the `🎙️ Start Voice` button in the top right.
+   - Verify the privacy notice modal appears:
+     - Clarifies all audio is processed strictly locally.
+     - Confirms zero transcripts or recordings are stored.
+     - Confirms shell/terminal command execution is blocked.
+   - Click `Enable Microphone`.
+   - The Voice HUD turns green: `🎙️ LISTENING`, and button changes to `⏹ Stop Voice`.
+4. **Command Execution**:
+   - Say: *"open browser"* -> Hear speech feedback *"Opening Browser"* and watch the browser launch.
+   - Say: *"volume up"* -> Hear speech feedback *"Volume X percent"* and watch volume increase.
+   - Say: *"read status"* -> Hear synthesized system status report.
+   - Say: *"help"* -> Hear available voice commands list.
+5. **Microphone Mute / Pause**:
+   - Press <kbd>M</kbd> on the keyboard.
+   - Voice HUD immediately changes to amber: `🔇 MIC MUTED (M)`, and speaker says *"Microphone muted"*.
+   - Say any command -> nothing is executed.
+   - Press <kbd>M</kbd> again -> HUD returns to green `🎙️ LISTENING` and announces *"Microphone active"*.
+6. **Confirmation Safety for Power Actions**:
+   - Say: *"restart"* -> Voice enters `⚠️ AWAITING CONFIRMATION`, and speech says: *"Restart requested. Say confirm to proceed, or cancel to abort."*
+   - Say: *"cancel"* -> Status returns to listening, speech says: *"Action canceled."* (System does NOT reboot).
+   - Say: *"restart"* -> Wait 10 seconds without speaking -> Confirmation automatically times out and aborts safely.
+7. **Prohibited Command Rejection**:
+   - Say: *"delete files"*, *"sudo reboot"*, or *"install app"*.
+   - The system completely ignores the utterance and never executes generic terminal commands.
+

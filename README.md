@@ -121,7 +121,7 @@ AccessOS/
 | 1 | Home screen foundation | ✅ Complete |
 | 2 | Settings & system control | ✅ Complete |
 | 3 | Head pointer + dwell selection | ✅ Complete |
-| 4 | Offline voice + TTS | 🔄 Ready for Phase 4 |
+| 4 | Offline voice + TTS | ✅ Complete |
 | 5 | Blink + experimental gaze | ⏳ Planned |
 | 6 | ISO packaging & validation | ⏳ Planned |
 

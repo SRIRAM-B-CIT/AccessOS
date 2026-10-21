@@ -376,7 +376,7 @@ class SettingsWindow(Gtk.Window):
         tts_icon = Gtk.Image.new_from_icon_name("audio-speakers", Gtk.IconSize.LARGE_TOOLBAR)
         tts_box.pack_start(tts_icon, False, False, 0)
         tts_info = Gtk.Label()
-        tts_info.set_markup("<b>Piper Offline TTS:</b> <span color='#ffd700'>Scheduled for Phase 4</span>\n<span color='#8b949e' font='10'>No network connection or API keys required. Currently dormant for lightweight operation.</span>")
+        tts_info.set_markup("<b>Piper Offline TTS:</b> <span color='#3fb950'>Active &amp; Ready (Offline)</span>\n<span color='#8b949e' font='10'>No network connection or API keys required. Currently dormant for lightweight operation.</span>")
         tts_info.set_xalign(0.0)
         tts_box.pack_start(tts_info, True, True, 0)
         page.pack_start(tts_box, False, False, 0)

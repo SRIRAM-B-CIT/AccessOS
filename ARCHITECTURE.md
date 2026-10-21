@@ -114,3 +114,20 @@ See README.md § Project structure.
 1. **X11 Session Requirement**: `X11Mouse` uses `libX11` and `libXtst` to inject synthetic pointer movement and clicks into the active X11 display server. This matches the target Linux Mint Xfce live environment.
 2. **Wayland Refusal**: Pure Wayland sessions block synthetic input for compositor-level security isolation. `check_session_supported()` detects non-X11 environments and raises `UnsupportedSessionError`, which `HeadPointerEngine` catches to halt gracefully with user-facing guidance.
 3. **Idempotent Emergency Pause**: <kbd>Esc</kbd> acts as a one-way safety latch (`pause_control()`). Repeatedly pressing <kbd>Esc</kbd> always leaves control paused and never inadvertently resumes movement. Resuming requires an explicit action (<kbd>R</kbd>, "Resume" button, or an approved voice command in Phase 4).
+
+## Offline Voice Control & Speech Synthesis Boundaries (Phase 4)
+1. **Zero-Cloud & In-Memory Audio Pipeline**:
+   - Audio is captured via ALSA `arecord` (16kHz 16-bit mono) in a dedicated streaming thread directly into memory. Zero audio recordings, buffers, or transcripts are ever written to disk or transmitted over the network.
+   - Speech synthesis uses on-device Piper TTS (`en_US-lessac-low.onnx`), streaming generated WAV frames directly from memory (`io.BytesIO`) into ALSA `aplay -q`.
+2. **Grammar-Constrained Decoding & Allowlist Isolation**:
+   - Speech recognition is constrained at the Kaldi lattice level by compiling an explicit grammar of safe phrases.
+   - The secondary `command_parser` applies strict defense-in-depth token blacklists (`rm`, `sudo`, `bash`, `delete`, `install`, `eval`, etc.).
+   - Recognized commands map strictly to internal `CommandAction` enums. Under no circumstances is voice text passed to a shell, terminal, or generic command runner.
+3. **Protected Power State Machine**:
+   - Commands requesting system power changes (`restart`, `shutdown`) enter an explicit confirmation state.
+   - Action requires a subsequent spoken `confirm` or `yes`. Saying `cancel` or waiting for the 10-second timeout safely aborts the request.
+4. **Consent, Visual HUD, & Keyboard Mute**:
+   - Voice listening is strictly disabled by default at startup and only starts upon explicit user consent.
+   - A dedicated `VoiceHUD` provides clear visual feedback of listening, muted, awaiting confirmation, and error states.
+   - <kbd>M</kbd> provides an instantaneous keyboard-accessible microphone pause/mute control.
+

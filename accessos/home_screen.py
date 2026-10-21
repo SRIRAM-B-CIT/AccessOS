@@ -38,7 +38,8 @@ from .audio_feedback import AudioFeedback
 from .power_menu import PowerMenu
 from .status_bar import StatusBar
 from .utils.config import Config
-from .settings import SettingsWindow, ConfirmDialog
+from .settings import SettingsWindow, ConfirmDialog, SystemControl
+from .voice import TTSEngine, VoiceListener, VoiceState, VoiceHUD, CommandAction
 from .engine import HeadPointerEngine, TrackingState, TrackingOverlay, check_session_supported
 
 log = logging.getLogger(__name__)
@@ -121,6 +122,18 @@ class HomeScreen(Gtk.ApplicationWindow):
             on_calibrate=self._engine.calibrate,
             on_toggle_pause=self._on_header_pause_clicked,
             on_stop=self._stop_tracking,
+        )
+
+        # Phase 4: Voice Control & Speech Synthesis (dormant until user enables)
+        self._tts = TTSEngine(enabled=True)
+        self._voice_hud = VoiceHUD(
+            on_toggle_mute=self._on_voice_hud_toggle_mute,
+            on_toggle_voice=self._on_voice_toggle_clicked,
+        )
+        self._voice_listener = VoiceListener(
+            tts=self._tts,
+            on_command=self._on_voice_command,
+            on_state_changed=self._on_voice_state_changed,
         )
 
         self._setup_window()
@@ -221,7 +234,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         hbox.pack_start(self._err_revealer, False, False, 0)
 
         # Tracking HUD Overlay
-        hbox.pack_start(self._tracking_overlay, False, False, 8)
+        hbox.pack_start(self._tracking_overlay, False, False, 6)
 
         # Camera Tracking Start/Stop Toggle Button
         self._cam_btn = Gtk.Button(label="📷  Start Tracking")
@@ -229,6 +242,16 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._cam_btn.set_tooltip_text("Enable or disable camera head-pointer tracking")
         self._cam_btn.connect("clicked", self._on_cam_toggle_clicked)
         hbox.pack_start(self._cam_btn, False, False, 0)
+
+        # Voice Control HUD Overlay
+        hbox.pack_start(self._voice_hud, False, False, 6)
+
+        # Voice Control Start/Stop Toggle Button
+        self._voice_btn = Gtk.Button(label="🎙️  Start Voice")
+        self._voice_btn.get_style_context().add_class("header-btn")
+        self._voice_btn.set_tooltip_text("Enable or disable offline voice control (Vosk)")
+        self._voice_btn.connect("clicked", self._on_voice_toggle_clicked)
+        hbox.pack_start(self._voice_btn, False, False, 0)
 
         # Pause / Resume button
         self._pause_btn = Gtk.Button(label="⏸  Pause")
@@ -474,6 +497,12 @@ class HomeScreen(Gtk.ApplicationWindow):
                 self._audio.play("activate")
                 return True
 
+        # M / m: MICROPHONE MUTE TOGGLE
+        if kv in (Gdk.KEY_m, Gdk.KEY_M):
+            if self._voice_listener.state != VoiceState.OFF:
+                self._voice_listener.toggle_mute()
+                return True
+
         # Number shortcuts 1-6
         if Gdk.KEY_1 <= kv <= Gdk.KEY_6:
             idx = kv - Gdk.KEY_1
@@ -516,8 +545,10 @@ class HomeScreen(Gtk.ApplicationWindow):
     # ── Window delete ─────────────────────────────────────────────────────────
 
     def _on_delete(self, _widget, _event) -> bool:
-        log.info("Window close requested — stopping engine")
+        log.info("Window close requested — stopping engines")
         self._engine.stop()
+        self._voice_listener.stop()
+        self._tts.stop()
         return False
 
     # ── Error notification ────────────────────────────────────────────────────
@@ -588,3 +619,122 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     def _on_dwell_click(self, x: int, y: int) -> None:
         self._audio.play("activate")
+
+    # ── Phase 4 Voice Control Handlers ────────────────────────────────────────
+
+    def _on_voice_hud_toggle_mute(self) -> None:
+        if self._voice_listener.state != VoiceState.OFF:
+            self._voice_listener.toggle_mute()
+
+    def _on_voice_toggle_clicked(self, _btn: Gtk.Button = None) -> None:
+        if self._voice_listener.state != VoiceState.OFF:
+            self._stop_voice()
+        else:
+            self._start_voice_flow()
+
+    def _start_voice_flow(self) -> None:
+        """Explicit user consent before opening the microphone."""
+        confirmed = ConfirmDialog.ask(
+            parent=self,
+            title="Enable Offline Voice Control?",
+            message="AccessOS will activate your microphone for offline speech recognition (Vosk).",
+            detail="Privacy Notice:\n• Audio is processed strictly locally using on-device models.\n• No recordings, transcripts, or voice data are ever saved or transmitted.\n• Only approved safety commands are executed; generic shell commands are blocked.\n• Press M at any time to mute the microphone.",
+            confirm_label="Enable Microphone",
+            is_destructive=False,
+        )
+        if confirmed:
+            log.info("User confirmed microphone access permission")
+            ok = self._voice_listener.start()
+            if ok:
+                self._voice_btn.set_label("⏹  Stop Voice")
+                self._audio.play("activate")
+            else:
+                self._show_error("Failed to start voice listener")
+
+    def _stop_voice(self) -> None:
+        self._voice_listener.stop()
+        self._voice_btn.set_label("🎙️  Start Voice")
+        self._voice_hud.update_state(VoiceState.OFF)
+        self._audio.play("activate")
+
+    def _on_voice_state_changed(self, state: VoiceState, detail: str) -> None:
+        self._voice_hud.update_state(state, detail)
+        if state == VoiceState.LISTENING:
+            self._voice_btn.set_label("⏹  Stop Voice")
+
+    def _on_voice_command(self, action: CommandAction) -> None:
+        log.info("Executing approved voice command: %s", action.value)
+        self._voice_hud.show_command_toast(action.value)
+        self._audio.play("activate")
+
+        if action == CommandAction.OPEN_BROWSER:
+            self._tts.speak("Opening Browser")
+            self._launcher.launch("browser", on_error=self._show_error)
+
+        elif action == CommandAction.OPEN_FILES:
+            self._tts.speak("Opening Files")
+            self._launcher.launch("files", on_error=self._show_error)
+
+        elif action == CommandAction.OPEN_TERMINAL:
+            self._tts.speak("Opening Terminal")
+            self._launcher.launch("terminal", on_error=self._show_error)
+
+        elif action == CommandAction.OPEN_SETTINGS:
+            self._tts.speak("Opening Settings")
+            self._open_settings()
+
+        elif action == CommandAction.OPEN_IMAGES:
+            self._tts.speak("Opening Images")
+            self._launcher.launch("images", on_error=self._show_error)
+
+        elif action == CommandAction.OPEN_VIDEOS:
+            self._tts.speak("Opening Videos")
+            self._launcher.launch("videos", on_error=self._show_error)
+
+        elif action == CommandAction.GO_HOME:
+            self._tts.speak("Home Screen")
+            self._move_focus(0)
+
+        elif action == CommandAction.PAUSE_CONTROL:
+            self._tts.speak("Control Paused")
+            self.pause_control()
+
+        elif action == CommandAction.RESUME_CONTROL:
+            self._tts.speak("Control Resumed")
+            self.resume_control()
+
+        elif action == CommandAction.STOP_TRACKING:
+            self._tts.speak("Stopping Camera Tracking")
+            self._stop_tracking()
+
+        elif action == CommandAction.READ_STATUS:
+            cur_vol = SystemControl.get_volume()
+            mode = self._config.get("accessibility", "mode", default="keyboard_mouse")
+            status_text = f"System online. Active mode: {mode}. Master volume: {cur_vol} percent."
+            self._tts.speak(status_text)
+
+        elif action == CommandAction.HELP:
+            help_text = (
+                "Voice commands available: open browser, open files, open terminal, "
+                "open settings, open images, open videos, go home, pause control, "
+                "resume control, stop tracking, volume up, or volume down."
+            )
+            self._tts.speak(help_text)
+
+        elif action == CommandAction.VOLUME_UP:
+            cur_vol = SystemControl.get_volume()
+            new_vol = min(100, cur_vol + 10)
+            SystemControl.set_volume(new_vol)
+            self._tts.speak(f"Volume {new_vol} percent")
+
+        elif action == CommandAction.VOLUME_DOWN:
+            cur_vol = SystemControl.get_volume()
+            new_vol = max(0, cur_vol - 10)
+            SystemControl.set_volume(new_vol)
+            self._tts.speak(f"Volume {new_vol} percent")
+
+        elif action == CommandAction.RESTART_REQUEST:
+            SystemControl.restart_system()
+
+        elif action == CommandAction.SHUTDOWN_REQUEST:
+            SystemControl.poweroff_system()
