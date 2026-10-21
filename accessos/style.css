@@ -548,3 +548,16 @@ scale slider {
     border: 1px solid #30363d;
     color: #8b949e;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Phase 3.5 · Input Safety Badge
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.safety-badge {
+    background-color: rgba(46, 160, 67, 0.15);
+    border: 1px solid #3fb950;
+    border-radius: 14px;
+    padding: 3px 10px;
+    color: #3fb950;
+    font-weight: bold;
+}

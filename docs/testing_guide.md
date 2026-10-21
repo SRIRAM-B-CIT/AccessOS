@@ -1,5 +1,68 @@
 # AccessOS — Testing Guide
 
+## 🛡️ Host vs VM Safety Matrix
+
+AccessOS enforces complete isolation between the host machine and synthetic input events:
+
+| Feature | Environment Support | Backend Used | Safety Guarantee |
+| :--- | :--- | :--- | :--- |
+| **Home Screen & macOS Dock** | ✅ **Host Safe** | Native GTK3 | Pure UI rendering; keyboard and physical mouse navigation |
+| **Settings & Configuration** | ✅ **Host Safe** | In-Memory / TOML | Safe config persistence and restore defaults |
+| **Audio Feedback & Sounds** | ✅ **Host Safe** | GSound / Subprocess | Non-intrusive sound cues |
+| **Head Pointer Tracking** | ✅ **Host Safe** (Dry-Run) | `DryRunMouseBackend` | Real camera tracking; moves **virtual reticle** inside window only |
+| **Dwell Selection & Progress** | ✅ **Host Safe** (Dry-Run) | `VirtualCursorOverlay` | Renders animated Cairo progress arc & ripple; **no OS clicks** |
+| **Safe Dry-Run Status Badge** | ✅ **Host Safe** | GTK Header Widget | Prominently displays `[🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED]` |
+| **Voice Control (Vosk)** | ✅ **Host Safe** | In-Memory Engine | Offline speech recognition; dispatches UI actions without OS injection |
+| **Speech Feedback (Piper)** | ✅ **Host Safe** | In-Memory ONNX | Neural TTS via local ALSA playback |
+| **Universal Emergency Stop** | ✅ **Host Safe & VM** | Keybinding (<kbd>F12</kbd>) | Idempotently releases all synthetic buttons, stops camera, and halts tracking |
+| **Real Pointer Injection** | ⛔ **VM Only** | `X11MouseBackend` (XTest) | **Strictly blocked on bare-metal host** via `HostSafetyViolationError` |
+| **Real System Clicks & Dwell** | ⛔ **VM Only** | `X11MouseBackend` (XTest) | **Strictly blocked on bare-metal host**; requires clean VM snapshot |
+| **Privileged Power (Shutdown/Reboot)** | ⛔ **VM Only** | `systemctl` / Polkit | Requires explicit UI/Voice confirmation; tested in VM |
+| **Boot-Time Autostart & ISO** | 📀 **ISO Only** | Live Session / LightDM | Configured during live ISO squashfs build |
+
+---
+
+## Host Safe-Mode Testing (Bare Metal)
+
+During host testing, AccessOS runs exclusively with `DryRunMouseBackend` and `VirtualCursorOverlay`.
+
+### Manual Test Procedure on Host
+1. Launch AccessOS in windowed mode:
+   ```bash
+   ACCESSOS_WINDOWED=1 python3 -m accessos
+   ```
+2. **Verify Safety Badge**: Check that the top-right header displays:
+   `[🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED]`
+3. **Verify Physical Mouse Freedom**:
+   - Move your physical mouse and click buttons, terminal, or dock items.
+   - Physical mouse pointer and clicks must remain 100% normal and unhindered.
+4. **Verify Virtual Cursor Overlay**:
+   - Start head tracking.
+   - As head moves, verify the cyan reticle cursor moves inside the AccessOS window.
+   - Dwell over a dock item: verify the circular dwell arc fills without moving the system pointer or generating OS clicks.
+   - On dwell completion, verify the expanding ripple animation triggers.
+5. **Verify Idempotent Pause**:
+   - Press <kbd>Esc</kbd>. The tracking indicator switches to **PAUSED**, and the pause banner slides down.
+   - Press <kbd>Esc</kbd> again: tracking remains **PAUSED** (idempotent, never toggles or resumes).
+   - Press <kbd>R</kbd> or click **Resume** to restore tracking.
+6. **Verify Universal Emergency Stop**:
+   - Press <kbd>F12</kbd> (or <kbd>Ctrl+Alt+S</kbd>).
+   - Verify tracking halts immediately, dwell progress resets to 0, camera stream closes, and state returns to safe stopped mode.
+
+---
+
+## VirtualBox VM Testing (Real Input Injection)
+
+> ⚠️ **CRITICAL SAFETY REQUIREMENT**: Real input injection (`X11MouseBackend`), real OS clicks, dwell clicking, and power controls are tested **strictly inside a VirtualBox VM with a clean baseline snapshot**. Never run real input injection on bare-metal host hardware.
+
+Refer to [`docs/virtualbox_test_plan.md`](virtualbox_test_plan.md) for the complete VirtualBox testing guide:
+- VM Setup: Linux Mint 22.3 Xfce 64-bit with VirtualBox Guest Additions and USB Webcam passthrough.
+- Snapshot creation: `VBoxManage snapshot "AccessOS-Mint-Xfce" take "baseline-clean"`
+- Execution of real input tests inside the VM.
+- Snapshot restoration upon any fault: `VBoxManage snapshot "AccessOS-Mint-Xfce" restore "baseline-clean"`
+
+---
+
 ## Unit tests (no hardware required)
 
 ```bash

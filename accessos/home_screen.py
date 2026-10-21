@@ -40,7 +40,7 @@ from .status_bar import StatusBar
 from .utils.config import Config
 from .settings import SettingsWindow, ConfirmDialog, SystemControl
 from .voice import TTSEngine, VoiceListener, VoiceState, VoiceHUD, CommandAction
-from .engine import HeadPointerEngine, TrackingState, TrackingOverlay, check_session_supported
+from .engine import HeadPointerEngine, TrackingState, TrackingOverlay, DryRunMouseBackend, VirtualCursorOverlay, check_session_supported
 
 log = logging.getLogger(__name__)
 
@@ -96,23 +96,31 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     def __init__(
         self,
-        app: Gtk.Application,
-        config: Config,
-        launcher: AppLauncher,
-        audio: AudioFeedback,
+        app: Gtk.Application | None = None,
+        config: Config | None = None,
+        launcher: AppLauncher | None = None,
+        audio: AudioFeedback | None = None,
     ) -> None:
         super().__init__(application=app)
-        self._config   = config
-        self._launcher = launcher
-        self._audio    = audio
+        self._config   = config or Config()
+        self._launcher = launcher or AppLauncher()
+        self._audio    = audio or AudioFeedback(enabled=False)
         self._paused   = False
 
         self._dock_btns: list[Gtk.Button] = []
         self._focus_idx = 0
 
+        # Phase 3.5: Modular Input-Safe Mouse Backend (DryRun default for host safety)
+        self._mouse_backend = DryRunMouseBackend(
+            screen_size=(1280, 720),
+            on_cursor_moved=self._on_cursor_moved,
+            on_click_event=self._on_virtual_click,
+        )
+
         # Phase 3: Vision Engine & Overlay (dormant until explicitly started)
         self._engine = HeadPointerEngine(
             config=self._config,
+            mouse_backend=self._mouse_backend,
             on_state_changed=self._on_tracking_state_changed,
             on_metrics_updated=self._on_tracking_metrics,
             on_dwell_progress=self._on_dwell_progress,
@@ -152,7 +160,9 @@ class HomeScreen(Gtk.ApplicationWindow):
         self.get_style_context().add_class("accessos-main")
         self.set_name("accessos-main-window")
 
-        if os.environ.get("ACCESSOS_WINDOWED", "0") == "1":
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            pass  # Keep default size during unit tests without blocking WM
+        elif os.environ.get("ACCESSOS_WINDOWED", "0") == "1":
             self.maximize()
         else:
             self.fullscreen()
@@ -178,8 +188,16 @@ class HomeScreen(Gtk.ApplicationWindow):
     # ────────────────────────────────────────────────────────── UI build ───
 
     def _build_ui(self) -> None:
+        self._overlay_container = Gtk.Overlay()
+        self.add(self._overlay_container)
+
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.add(root)
+        self._overlay_container.add(root)
+
+        # Phase 3.5: Virtual Cursor Overlay (layered on top with event pass-through)
+        self._cursor_overlay = VirtualCursorOverlay()
+        self._overlay_container.add_overlay(self._cursor_overlay)
+        self._overlay_container.set_overlay_pass_through(self._cursor_overlay, True)
 
         # 1. Compact Top Bar (Header + Status Controls)
         root.pack_start(self._build_header(), False, False, 0)
@@ -219,6 +237,19 @@ class HomeScreen(Gtk.ApplicationWindow):
         brand.pack_start(t_lbl, False, False, 0)
         brand.pack_start(s_lbl, False, False, 0)
         hbox.pack_start(brand, False, False, 0)
+
+        # Phase 3.5: Prominent Safe Mode Badge
+        self._safety_badge = Gtk.Label()
+        self._safety_badge.set_markup(
+            "<span font='9' weight='bold' color='#3fb950'> 🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED </span>"
+        )
+        self._safety_badge.get_style_context().add_class("safety-badge")
+        self._safety_badge.set_tooltip_text(
+            "Host Safety Protection: Running in safe Dry-Run mode with Virtual Cursor. "
+            "Real physical mouse and host desktop are 100% unaffected. "
+            "Real input testing is restricted to VirtualBox VMs."
+        )
+        hbox.pack_start(self._safety_badge, False, False, 12)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
@@ -369,6 +400,7 @@ class HomeScreen(Gtk.ApplicationWindow):
     def _connect_signals(self) -> None:
         self.connect("key-press-event", self._on_key_press)
         self.connect("delete-event",    self._on_delete)
+        self.connect("size-allocate",   self._on_window_size_allocate)
         GLib.idle_add(self._initial_focus)
 
     def _initial_focus(self) -> bool:
@@ -442,6 +474,7 @@ class HomeScreen(Gtk.ApplicationWindow):
             self._pause_revealer.set_reveal_child(True)
             self._dock.set_sensitive(False)
             self._audio.play("pause")
+            self._cursor_overlay.set_active(False)
             if self._engine.state == TrackingState.TRACKING:
                 self._engine.pause()
             log.info("Control PAUSED via emergency pause (idempotent)")
@@ -457,6 +490,7 @@ class HomeScreen(Gtk.ApplicationWindow):
             self._pause_revealer.set_reveal_child(False)
             self._dock.set_sensitive(True)
             self._audio.play("resume")
+            self._cursor_overlay.set_active(True)
             if self._engine.state == TrackingState.PAUSED:
                 self._engine.resume()
             log.info("Control RESUMED explicitly")
@@ -479,6 +513,11 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     def _on_key_press(self, _widget: Gtk.Widget, event: Gdk.EventKey) -> bool:
         kv = event.keyval
+
+        # F12: UNIVERSAL EMERGENCY STOP (shuts down all engines without needing mouse)
+        if kv == Gdk.KEY_F12:
+            self._emergency_stop_all()
+            return True
 
         # Esc: IDEMPOTENT EMERGENCY PAUSE (always pauses, never resumes)
         if kv == Gdk.KEY_Escape:
@@ -544,11 +583,32 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     # ── Window delete ─────────────────────────────────────────────────────────
 
-    def _on_delete(self, _widget, _event) -> bool:
-        log.info("Window close requested — stopping engines")
-        self._engine.stop()
+    def _on_window_size_allocate(self, _widget, alloc) -> None:
+        if isinstance(self._mouse_backend, DryRunMouseBackend):
+            self._mouse_backend.set_screen_size(alloc.width, alloc.height)
+
+    def _on_cursor_moved(self, x: int, y: int) -> None:
+        self._cursor_overlay.update_position(x, y)
+
+    def _on_virtual_click(self, x: int, y: int, button: int) -> None:
+        self._cursor_overlay.trigger_click(x, y)
+        self._audio.play("activate")
+
+    def _emergency_stop_all(self) -> None:
+        """Universal emergency stop: halts all vision and voice engines and releases input."""
+        log.warning("Universal Emergency Stop activated")
+        self._engine.emergency_stop()
         self._voice_listener.stop()
         self._tts.stop()
+        self._cursor_overlay.set_active(False)
+        self._cam_btn.set_label("📷  Start Tracking")
+        self._voice_btn.set_label("🎙️  Start Voice")
+        self._show_error("EMERGENCY STOP: All control engines halted. Synthetic input released.")
+        self._audio.play("error")
+
+    def _on_delete(self, _widget, _event) -> bool:
+        log.info("Window close requested — performing full emergency cleanup")
+        self._emergency_stop_all()
         return False
 
     # ── Error notification ────────────────────────────────────────────────────
@@ -590,6 +650,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         )
         if confirmed:
             log.info("User confirmed camera access permission")
+            self._cursor_overlay.set_active(True)
             ok = self._engine.start()
             if ok:
                 self._cam_btn.set_label("⏹  Stop Tracking")
@@ -599,6 +660,7 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     def _stop_tracking(self) -> None:
         self._engine.stop()
+        self._cursor_overlay.set_active(False)
         self._cam_btn.set_label("📷  Start Tracking")
         self._tracking_overlay.update_state(TrackingState.STOPPED)
         self._tracking_overlay.update_dwell_progress(0.0)

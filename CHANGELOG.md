@@ -1,3 +1,36 @@
+## [Phase 3.5] - 2026-10-21 - Input-Safety Redesign & Host Isolation
+
+### Incident Report & Root Cause
+- **Incident**: During bare-metal host testing of Phase 3 on the ThinkPad T480, physical mouse clicks froze and stopped responding to hardware input. The system had to be recovered by killing the AccessOS process and rebooting the machine.
+- **Root Cause**: Synthetic mouse button press/release events injected via `libXtst` (`XTestFakeButtonEvent`) directly into the host's root X11 display window interfered with the host desktop's pointer grab and physical event dispatch queue.
+
+### Architecture Redesign & Safety Guarantees
+- **Separated Mouse Backends**:
+  - `DryRunMouseBackend`: Pure in-memory coordinate and button state tracking. Completely free of XTest, X11, ctypes, `xdotool`, `pyautogui`, or any OS input injection. Used as the mandatory default on bare-metal host systems.
+  - `VirtualCursorOverlay`: Transparent GTK Cairo drawing overlay with event pass-through (`gtk_overlay_set_overlay_pass_through`). Renders a distinct cyan reticle cursor, crosshairs, radial dwell progress arc, and expanding ripple animations strictly inside the AccessOS window.
+  - `X11MouseBackend`: Retained strictly for VirtualBox VM testing.
+- **Host Hardware Lockout & Safe Defaults**:
+  - `can_use_real_mouse_injection()` inspects `systemd-detect-virt` and DMI firmware tables (`sys_vendor`, `product_name`).
+  - AccessOS defaults to `DryRunMouseBackend` on host hardware.
+  - Instantiating `X11MouseBackend` on bare metal unconditionally raises `HostSafetyViolationError`, refusing to start with an actionable safety error message.
+  - Prominent UI safety badge displayed in the top-right header: `[🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED]`.
+- **Full Cleanup & Button Release Guarantees**:
+  - Added `release_all_buttons()` to ensure all synthetic mouse buttons are released.
+  - On Pause, Stop Tracking, Tracking Loss, Camera Failure, Worker-Thread Failure, GTK Window Close, SIGINT, SIGTERM, Uncaught Exception, and Normal Exit:
+    1. Dwell progress is canceled immediately;
+    2. All synthetic mouse buttons are explicitly released;
+    3. Pointer injection is halted;
+    4. Camera device is cleanly closed;
+    5. Safe dry-run state is restored.
+- **Keyboard-Only Universal Emergency Stop**:
+  - Bound <kbd>F12</kbd> (and <kbd>Ctrl+Alt+S</kbd>) to instantly shut down every AccessOS engine and release all resources without requiring mouse interaction.
+  - Preserved idempotent pause behavior on <kbd>Esc</kbd> (pauses only; never toggles or resumes).
+- **VirtualBox-Only Real Input Testing**:
+  - Created comprehensive VM test plan and clean baseline snapshot procedures in `docs/virtualbox_test_plan.md`.
+  - Prohibited real input injection tests on the host development machine.
+- **Regression Test Suite**:
+  - Added 11 automated safety tests in `tests/test_input_safety.py` covering dry-run isolation, bare-metal blocking, cleanup paths on failure, virtual cursor overlay rendering, and emergency stop shortcuts (76/76 total repository tests passing).
+
 
 ## [Phase 4] - 2026-10-21 - Offline Voice Control & Speech Synthesis
 

@@ -33,9 +33,7 @@ class TTSEngine:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-        if self.enabled:
-            self._load_model()
-            self._start_worker()
+        # Lazy loading on first speak() prevents blocking UI / app startup
 
     def _load_model(self) -> bool:
         if not self.model_path.exists():
@@ -68,11 +66,24 @@ class TTSEngine:
             if self._load_model():
                 self._start_worker()
 
+    def _ensure_loaded(self) -> bool:
+        if self._voice is not None:
+            return True
+        if self._load_model():
+            self._start_worker()
+            return True
+        return False
+
     def speak(self, text: str, interrupt: bool = False) -> None:
         """Enqueue speech text for synthesis."""
-        if not self.enabled or self._voice is None:
-            log.debug("TTS disabled/unavailable, text not spoken: '%s'", text)
+        if not self.enabled:
+            log.debug("TTS disabled, text not spoken: '%s'", text)
             return
+
+        if self._voice is None:
+            if not self._ensure_loaded():
+                log.debug("TTS model could not be loaded, text not spoken: '%s'", text)
+                return
 
         if interrupt:
             # Clear pending utterances

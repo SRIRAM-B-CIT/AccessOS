@@ -102,6 +102,29 @@ AccessOS/
 
 ---
 
+## 🛡️ Host vs VM Safety Matrix
+
+To prevent synthetic input events from interfering with bare-metal host hardware (e.g. freezing physical mouse clicks or capturing window manager events), AccessOS strictly enforces an architectural boundary between host development and live input injection:
+
+| Feature | Environment Support | Backend Used | Safety Guarantee |
+| :--- | :--- | :--- | :--- |
+| **Home Screen & macOS Dock** | ✅ **Host Safe** | Native GTK3 | Pure UI rendering; keyboard and physical mouse navigation |
+| **Settings & Configuration** | ✅ **Host Safe** | In-Memory / TOML | Safe config persistence and restore defaults |
+| **Audio Feedback & Sounds** | ✅ **Host Safe** | GSound / Subprocess | Non-intrusive sound cues |
+| **Head Pointer Tracking** | ✅ **Host Safe** (Dry-Run) | `DryRunMouseBackend` | Real camera tracking; moves **virtual reticle** inside window only |
+| **Dwell Selection & Progress** | ✅ **Host Safe** (Dry-Run) | `VirtualCursorOverlay` | Renders animated Cairo progress arc & ripple; **no OS clicks** |
+| **Safe Dry-Run Status Badge** | ✅ **Host Safe** | GTK Header Widget | Prominently displays `[🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED]` |
+| **Voice Control (Vosk)** | ✅ **Host Safe** | In-Memory Engine | Offline speech recognition; dispatches UI actions without OS injection |
+| **Speech Feedback (Piper)** | ✅ **Host Safe** | In-Memory ONNX | Neural TTS via local ALSA playback |
+| **Universal Emergency Stop** | ✅ **Host Safe & VM** | Keybinding (<kbd>F12</kbd>) | Idempotently releases all synthetic buttons, stops camera, and halts tracking |
+| **Real Pointer Injection** | ⛔ **VM Only** | `X11MouseBackend` (XTest) | **Strictly blocked on bare-metal host** via `HostSafetyViolationError` |
+| **Real System Clicks & Dwell** | ⛔ **VM Only** | `X11MouseBackend` (XTest) | **Strictly blocked on bare-metal host**; requires clean VM snapshot |
+| **Privileged Power (Shutdown/Reboot)** | ⛔ **VM Only** | `systemctl` / Polkit | Requires explicit UI/Voice confirmation; tested in VM |
+| **Boot-Time Autostart & ISO** | 📀 **ISO Only** | Live Session / LightDM | Configured during live ISO squashfs build |
+
+> **Host Safety Enforcement**: Any attempt to instantiate `X11MouseBackend` or enable real OS input injection on bare-metal host hardware raises an immediate `HostSafetyViolationError` and halts initialization.
+
+
 ## ⚠ Important disclaimers
 
 - AccessOS is a **portfolio / research project**, not a certified medical device.

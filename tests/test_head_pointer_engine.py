@@ -1,10 +1,10 @@
 """
-Tests for HeadPointerEngine States, Idempotent Pause, and Non-X11 Session Handling
+Tests for HeadPointerEngine States, Idempotent Pause, and Input-Safety Handling
 """
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from accessos.utils.config import Config
 from accessos.engine.head_pointer import HeadPointerEngine, TrackingState
-from accessos.engine.x11_mouse import UnsupportedSessionError
+from accessos.engine.mouse_backend import DryRunMouseBackend, UnsupportedSessionError
 
 
 def test_engine_idempotent_pause_behavior():
@@ -40,9 +40,27 @@ def test_engine_idempotent_pause_behavior():
 
 def test_engine_handles_unsupported_session_safely():
     cfg = Config()
-    engine = HeadPointerEngine(config=cfg)
+    mock_backend = MagicMock(spec=DryRunMouseBackend)
+    mock_backend.screen_size = (1280, 720)
+    mock_backend.is_real_injection = False
 
-    # Mock X11Mouse to raise UnsupportedSessionError
-    with patch("accessos.engine.head_pointer.X11Mouse", side_effect=UnsupportedSessionError("Wayland not supported")):
+    engine = HeadPointerEngine(config=cfg, mouse_backend=mock_backend)
+
+    # Simulate camera open failure or unsupported session
+    with patch("accessos.engine.head_pointer.cv2.VideoCapture", side_effect=UnsupportedSessionError("Unsupported session")):
         engine._run_loop()
         assert engine.state == TrackingState.STOPPED
+
+
+def test_engine_cleanup_on_emergency_stop():
+    cfg = Config()
+    mock_backend = MagicMock(spec=DryRunMouseBackend)
+    mock_backend.screen_size = (1280, 720)
+
+    engine = HeadPointerEngine(config=cfg, mouse_backend=mock_backend)
+    engine._dwell._current_progress = 0.75
+
+    engine.emergency_stop()
+    assert engine.state == TrackingState.STOPPED
+    assert engine._dwell.progress == 0.0
+    mock_backend.release_all_buttons.assert_called()
