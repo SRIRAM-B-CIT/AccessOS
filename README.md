@@ -118,8 +118,8 @@ AccessOS/
 | # | Name | Status |
 |---|------|--------|
 | 0 | Discovery & architecture | ✅ Complete |
-| 1 | Home screen foundation | ✅ In progress |
-| 2 | Settings & onboarding wizard | ⏳ Planned |
+| 1 | Home screen foundation | ✅ Complete |
+| 2 | Settings & system control | 🔄 In progress |
 | 3 | Head pointer + dwell selection | ⏳ Planned |
 | 4 | Offline voice + TTS | ⏳ Planned |
 | 5 | Blink + experimental gaze | ⏳ Planned |
