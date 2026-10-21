@@ -49,6 +49,7 @@ from gi.repository import Gdk, GLib, Gtk
 from .app_launcher import AppLauncher
 from .audio_feedback import AudioFeedback
 from .power_menu import PowerMenu
+from .settings import SettingsWindow
 from .status_bar import StatusBar
 from .utils.config import Config
 
@@ -141,6 +142,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._load_css()
         self._build_ui()
         self._connect_signals()
+        self._config.add_change_listener(self._on_config_changed)
 
         log.info("HomeScreen ready")
 
@@ -384,7 +386,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._audio.play("activate")
 
         if key == "settings":
-            self._show_settings_placeholder()
+            self._open_settings()
             return
 
         self._launcher.launch(key, on_error=self._show_error)
@@ -477,25 +479,33 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._err_revealer.set_reveal_child(False)
         return False   # one-shot
 
-    # ── Settings placeholder ──────────────────────────────────────────────────
+    # ── Settings Window ───────────────────────────────────────────────────────
 
-    def _show_settings_placeholder(self) -> None:
-        dlg = Gtk.MessageDialog(
-            transient_for=self,
-            modal=True,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
-            text="AccessOS Settings — Phase 2",
+    def _open_settings(self) -> None:
+        log.info("Opening SettingsWindow")
+        win = SettingsWindow(
+            config=self._config,
+            audio=self._audio,
+            parent=self,
         )
-        dlg.format_secondary_text(
-            "The full Settings application will be built in Phase 2.\n\n"
-            "Current configuration:\n"
-            "  • Input mode : Keyboard & Mouse\n"
-            "  • Camera     : Disabled  (Phase 3)\n"
-            "  • Microphone : Disabled  (Phase 4)\n"
-            "  • TTS        : Disabled  (Phase 4)\n\n"
-            "Settings are stored in:\n"
-            "  ~/.config/accessos/settings.toml"
-        )
-        dlg.run()
-        dlg.destroy()
+        win.show_all()
+        win.present()
+
+    def _on_config_changed(self, key_path: str, value) -> None:
+        log.debug("HomeScreen received config change: %s = %s", key_path, value)
+        # Update audio state
+        if "audio" in key_path or key_path == "all":
+            enabled = self._config.get("audio", "sounds_enabled", default=True)
+            self._audio.set_enabled(enabled)
+            self._status.set_audio_state(enabled)
+
+        # Update mode badge
+        if "accessibility" in key_path or key_path == "all":
+            mode = self._config.get("accessibility", "mode", default="keyboard_mouse")
+            mode_display = {
+                "keyboard_mouse": "Keyboard & Mouse",
+                "head_pointer": "Head Pointer (P3)",
+                "dwell_selection": "Dwell (P3)",
+                "voice_control": "Voice (P4)",
+            }.get(mode, mode)
+            self._status.set_active_mode(mode_display)

@@ -1,20 +1,9 @@
 """
 AccessOS Power Menu
 ====================
-A modal dialog presenting power and session actions.
-
-Phase 1 scope:
-  - Lock Screen     : UI placeholder only  (no actual lock in Phase 1)
-  - Restart System  : UI placeholder only  (no actual restart in Phase 1)
-  - Shut Down       : UI placeholder only  (no actual shutdown in Phase 1)
-  - Return to Home  : closes this dialog (always available)
-
-The user-visible message makes the Phase 1 limitation explicit so there is
-no false expectation that the button will do anything.
-
-Phase 2 will add privileged power actions after explicit approval.
-Destructive actions (restart, shutdown) will always require a confirmation
-step before being executed.
+Modal dialog presenting power and session actions.
+Phase 2: Every system-changing power action is guarded by an explicit
+confirmation dialog before execution.
 """
 from __future__ import annotations
 
@@ -24,27 +13,16 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
-log = logging.getLogger(__name__)
+from .settings.confirm_dialog import ConfirmDialog
+from .settings.system_control import SystemControl
 
-# ── Phase 1 notice text ───────────────────────────────────────────────────────
-_PHASE1_MSG = (
-    "This action is not yet available.\n\n"
-    "Power controls will be implemented in Phase 2, "
-    "with a confirmation step before any destructive action.\n\n"
-    "To exit AccessOS during development, close the window or press Ctrl+C "
-    "in the terminal where it was launched."
-)
+log = logging.getLogger(__name__)
 
 
 class PowerMenu(Gtk.Dialog):
     """
     Power and session options dialog.
-
-    Usage::
-
-        menu = PowerMenu(parent=home_window)
-        menu.run()
-        menu.destroy()
+    Guards restart, shutdown, and lock with explicit confirmation dialogs.
     """
 
     def __init__(self, parent: Gtk.Window) -> None:
@@ -54,28 +32,31 @@ class PowerMenu(Gtk.Dialog):
             modal=True,
             destroy_with_parent=True,
         )
-        self.set_default_size(340, -1)
+        self.set_default_size(360, -1)
         self.set_resizable(False)
+        self.get_style_context().add_class("settings-card")
         self._build()
-
-    # ── Widget construction ────────────────────────────────────────────────────
 
     def _build(self) -> None:
         content = self.get_content_area()
-        content.set_spacing(0)
-        content.set_margin_top(8)
-        content.set_margin_bottom(8)
-        content.set_margin_start(8)
-        content.set_margin_end(8)
+        content.set_spacing(8)
+        content.set_margin_top(16)
+        content.set_margin_bottom(16)
+        content.set_margin_start(16)
+        content.set_margin_end(16)
 
         # Heading
         heading = Gtk.Label()
-        heading.set_markup('<span font="15" weight="bold">Power Options</span>')
-        heading.set_margin_bottom(12)
-        content.pack_start(heading, False, False, 8)
+        heading.set_markup('<span font="16" weight="bold">Power & Session</span>')
+        heading.set_xalign(0.0)
+        content.pack_start(heading, False, False, 0)
 
-        # Separator
-        content.pack_start(Gtk.Separator(), False, False, 0)
+        sub = Gtk.Label()
+        sub.set_markup('<span color="#8b949e" font="10">All power actions require confirmation.</span>')
+        sub.set_xalign(0.0)
+        content.pack_start(sub, False, False, 0)
+
+        content.pack_start(Gtk.Separator(), False, False, 6)
 
         # Action buttons
         actions = [
@@ -84,47 +65,61 @@ class PowerMenu(Gtk.Dialog):
             ("⏻   Shut Down",      "shutdown", True),   # destructive
         ]
 
-        for label, key, _destructive in actions:
+        for label, key, destructive in actions:
             btn = Gtk.Button(label=label)
-            btn.set_margin_top(4)
-            btn.set_margin_bottom(4)
-            btn.set_margin_start(4)
-            btn.set_margin_end(4)
+            btn.get_style_context().add_class("pwr-action-btn-danger" if destructive else "pwr-action-btn")
             btn.connect("clicked", self._on_action, key)
             content.pack_start(btn, False, False, 0)
 
-        # Separator
-        content.pack_start(Gtk.Separator(), False, False, 4)
+        content.pack_start(Gtk.Separator(), False, False, 6)
 
-        # Return to Home  (always works in Phase 1)
+        # Return to Home / Cancel
         home_btn = Gtk.Button(label="🏠  Return to Home")
-        home_btn.set_margin_top(4)
-        home_btn.set_margin_bottom(4)
-        home_btn.set_margin_start(4)
-        home_btn.set_margin_end(4)
-        home_btn.connect("clicked", self._on_return_home)
+        home_btn.get_style_context().add_class("btn-cancel")
+        home_btn.connect("clicked", lambda _: self.response(Gtk.ResponseType.CANCEL))
         content.pack_start(home_btn, False, False, 0)
 
-        # Cancel
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
-
         self.show_all()
-
-    # ── Signal handlers ────────────────────────────────────────────────────────
+        home_btn.grab_focus()
 
     def _on_action(self, _btn: Gtk.Button, key: str) -> None:
-        log.info("Power menu: '%s' pressed — Phase 1 placeholder", key)
-        info = Gtk.MessageDialog(
-            transient_for=self,
-            modal=True,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
-            text="Not available in Phase 1",
-        )
-        info.format_secondary_text(_PHASE1_MSG)
-        info.run()
-        info.destroy()
+        log.info("Power action triggered: %s", key)
 
-    def _on_return_home(self, _btn: Gtk.Button) -> None:
-        log.info("Power menu: returning to home screen")
-        self.response(Gtk.ResponseType.CANCEL)
+        if key == "lock":
+            confirmed = ConfirmDialog.ask(
+                parent=self,
+                title="Lock Session",
+                message="Lock AccessOS session now?",
+                detail="You will need to re-authenticate to unlock.",
+                confirm_label="Lock Now",
+                is_destructive=False,
+            )
+            if confirmed:
+                SystemControl.lock_session()
+                self.response(Gtk.ResponseType.OK)
+
+        elif key == "restart":
+            confirmed = ConfirmDialog.ask(
+                parent=self,
+                title="Restart Computer",
+                message="Are you sure you want to restart AccessOS?",
+                detail="All unsaved work will be lost.",
+                confirm_label="Restart Now",
+                is_destructive=True,
+            )
+            if confirmed:
+                SystemControl.restart_system()
+                self.response(Gtk.ResponseType.OK)
+
+        elif key == "shutdown":
+            confirmed = ConfirmDialog.ask(
+                parent=self,
+                title="Shut Down Computer",
+                message="Are you sure you want to shut down AccessOS?",
+                detail="The machine will completely power off.",
+                confirm_label="Shut Down Now",
+                is_destructive=True,
+            )
+            if confirmed:
+                SystemControl.poweroff_system()
+                self.response(Gtk.ResponseType.OK)

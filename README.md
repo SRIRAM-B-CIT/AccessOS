@@ -119,7 +119,7 @@ AccessOS/
 |---|------|--------|
 | 0 | Discovery & architecture | ✅ Complete |
 | 1 | Home screen foundation | ✅ Complete |
-| 2 | Settings & system control | 🔄 In progress |
+| 2 | Settings & system control | ✅ Complete |
 | 3 | Head pointer + dwell selection | ⏳ Planned |
 | 4 | Offline voice + TTS | ⏳ Planned |
 | 5 | Blink + experimental gaze | ⏳ Planned |
