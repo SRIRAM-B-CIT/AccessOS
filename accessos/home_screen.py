@@ -38,7 +38,8 @@ from .audio_feedback import AudioFeedback
 from .power_menu import PowerMenu
 from .status_bar import StatusBar
 from .utils.config import Config
-from .settings import SettingsWindow
+from .settings import SettingsWindow, ConfirmDialog
+from .engine import HeadPointerEngine, TrackingState, TrackingOverlay
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,20 @@ class HomeScreen(Gtk.ApplicationWindow):
 
         self._dock_btns: list[Gtk.Button] = []
         self._focus_idx = 0
+
+        # Phase 3: Vision Engine & Overlay (dormant until explicitly started)
+        self._engine = HeadPointerEngine(
+            config=self._config,
+            on_state_changed=self._on_tracking_state_changed,
+            on_metrics_updated=self._on_tracking_metrics,
+            on_dwell_progress=self._on_dwell_progress,
+            on_click=self._on_dwell_click,
+        )
+        self._tracking_overlay = TrackingOverlay(
+            on_calibrate=self._engine.calibrate,
+            on_toggle_pause=self._on_pause_toggled,
+            on_stop=self._stop_tracking,
+        )
 
         self._setup_window()
         self._load_css()
@@ -204,6 +219,16 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._err_label.set_margin_end(10)
         self._err_revealer.add(self._err_label)
         hbox.pack_start(self._err_revealer, False, False, 0)
+
+        # Tracking HUD Overlay
+        hbox.pack_start(self._tracking_overlay, False, False, 8)
+
+        # Camera Tracking Start/Stop Toggle Button
+        self._cam_btn = Gtk.Button(label="📷  Start Tracking")
+        self._cam_btn.get_style_context().add_class("header-btn")
+        self._cam_btn.set_tooltip_text("Enable or disable camera head-pointer tracking")
+        self._cam_btn.connect("clicked", self._on_cam_toggle_clicked)
+        hbox.pack_start(self._cam_btn, False, False, 0)
 
         # Pause / Resume button
         self._pause_btn = Gtk.Button(label="⏸  Pause")
@@ -383,7 +408,7 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     # ── Pause / resume ────────────────────────────────────────────────────────
 
-    def _on_pause_toggled(self, _widget) -> None:
+    def _on_pause_toggled(self, _widget=None) -> None:
         self._paused = not self._paused
 
         if self._paused:
@@ -391,12 +416,16 @@ class HomeScreen(Gtk.ApplicationWindow):
             self._pause_revealer.set_reveal_child(True)
             self._dock.set_sensitive(False)
             self._audio.play("pause")
-            log.info("Control PAUSED")
+            if self._engine.state == TrackingState.TRACKING:
+                self._engine.pause()
+            log.info("Control PAUSED (keyboard/mouse fallback active)")
         else:
             self._pause_btn.set_label("⏸  Pause")
             self._pause_revealer.set_reveal_child(False)
             self._dock.set_sensitive(True)
             self._audio.play("resume")
+            if self._engine.state == TrackingState.PAUSED:
+                self._engine.resume()
             log.info("Control RESUMED")
 
         self._status.set_paused(self._paused)
@@ -416,6 +445,12 @@ class HomeScreen(Gtk.ApplicationWindow):
         if kv == Gdk.KEY_Escape:
             self._on_pause_toggled(None)
             return True
+
+        if kv in (Gdk.KEY_c, Gdk.KEY_C):
+            if self._engine.state == TrackingState.TRACKING:
+                self._engine.calibrate()
+                self._audio.play("activate")
+                return True
 
         # Number shortcuts 1-6
         if Gdk.KEY_1 <= kv <= Gdk.KEY_6:
@@ -459,7 +494,8 @@ class HomeScreen(Gtk.ApplicationWindow):
     # ── Window delete ─────────────────────────────────────────────────────────
 
     def _on_delete(self, _widget, _event) -> bool:
-        log.info("Window close requested — exiting")
+        log.info("Window close requested — stopping engine")
+        self._engine.stop()
         return False
 
     # ── Error notification ────────────────────────────────────────────────────
@@ -474,3 +510,53 @@ class HomeScreen(Gtk.ApplicationWindow):
     def _hide_error(self) -> bool:
         self._err_revealer.set_reveal_child(False)
         return False
+
+    # ── Phase 3 Vision Engine Handlers ────────────────────────────────────────
+
+    def _on_cam_toggle_clicked(self, _btn: Gtk.Button) -> None:
+        if self._engine.state in (TrackingState.TRACKING, TrackingState.LOST, TrackingState.PAUSED):
+            self._stop_tracking()
+        else:
+            self._start_tracking_flow()
+
+    def _start_tracking_flow(self) -> None:
+        """Explicit user permission notice before opening the webcam."""
+        confirmed = ConfirmDialog.ask(
+            parent=self,
+            title="Enable Camera Head Tracking?",
+            message="AccessOS will activate your verified RGB webcam to track head movements for pointer control.",
+            detail="Notice:\n• Video frames are processed entirely locally and never recorded or transmitted.\n• Physical keyboard and mouse remain fully functional at all times.\n• Press Esc at any time to immediately pause camera pointer actions.",
+            confirm_label="Enable Camera",
+            is_destructive=False,
+        )
+        if confirmed:
+            log.info("User confirmed camera access permission")
+            ok = self._engine.start()
+            if ok:
+                self._cam_btn.set_label("⏹  Stop Tracking")
+                self._audio.play("activate")
+            else:
+                self._show_error("Failed to start camera tracking")
+
+    def _stop_tracking(self) -> None:
+        self._engine.stop()
+        self._cam_btn.set_label("📷  Start Tracking")
+        self._tracking_overlay.update_state(TrackingState.STOPPED)
+        self._tracking_overlay.update_dwell_progress(0.0)
+        self._audio.play("activate")
+
+    def _on_tracking_state_changed(self, state: TrackingState, detail: str) -> None:
+        self._tracking_overlay.update_state(state, detail)
+        if state == TrackingState.LOST:
+            self._audio.play("error")
+        elif state == TrackingState.TRACKING:
+            self._cam_btn.set_label("⏹  Stop Tracking")
+
+    def _on_tracking_metrics(self, fps: float, latency_ms: float) -> None:
+        self._tracking_overlay.update_metrics(fps, latency_ms)
+
+    def _on_dwell_progress(self, progress: float, x: int, y: int) -> None:
+        self._tracking_overlay.update_dwell_progress(progress)
+
+    def _on_dwell_click(self, x: int, y: int) -> None:
+        self._audio.play("activate")
