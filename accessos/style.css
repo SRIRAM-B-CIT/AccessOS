@@ -136,7 +136,7 @@ window#accessos-main-window {
 }
 
 /* Greyed-out appearance when control is paused */
-.launch-button:insensitive {
+.launch-button:disabled {
     background-color: rgba(255, 255, 255, 0.02);
     border-color: rgba(255, 255, 255, 0.04);
     color: rgba(200, 210, 220, 0.25);
@@ -149,7 +149,7 @@ window#accessos-main-window {
     font-weight: bold;
 }
 
-.btn-label:insensitive {
+.btn-label:disabled {
     color: rgba(200, 210, 220, 0.25);
 }
 
@@ -158,7 +158,7 @@ window#accessos-main-window {
     font-size: 11px;
 }
 
-.btn-desc:insensitive {
+.btn-desc:disabled {
     color: rgba(160, 180, 210, 0.20);
 }
 
