@@ -2,27 +2,71 @@
 AccessOS Native X11 Mouse Controller
 =====================================
 Direct, high-performance cursor manipulation and click simulation
-via libX11 and libXtst using ctypes. Fully typed for 64-bit pointers (Display*).
+via libX11 and libXtst using 64-bit typed ctypes.
+
+Session Scope:
+  Supports X11 sessions ONLY (standard on Linux Mint Xfce).
+  Fails safely with UnsupportedSessionError if invoked on an unsupported
+  desktop session (e.g. pure Wayland).
 """
 from __future__ import annotations
 
 import ctypes
 import ctypes.util
 import logging
+import os
 from typing import Tuple
 
 log = logging.getLogger(__name__)
+
+
+class UnsupportedSessionError(RuntimeError):
+    """Raised when pointer injection is attempted on an unsupported session (e.g. Wayland)."""
+    pass
+
+
+def check_session_supported() -> Tuple[bool, str]:
+    """
+    Verify that the current desktop environment is a supported X11 session.
+    Linux Mint Xfce runs X11 natively. Pure Wayland environments block
+    standard synthetic input injection for security isolation.
+    """
+    session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+    display = os.environ.get("DISPLAY")
+
+    if session_type == "wayland" and not display:
+        return False, (
+            "AccessOS pointer injection requires an X11 desktop session. "
+            "Pure Wayland sessions do not allow simulated pointer injection. "
+            "Linux Mint Xfce runs an X11 session by default."
+        )
+
+    if not display:
+        return False, (
+            "No X11 display found (DISPLAY environment variable is unset). "
+            "AccessOS pointer injection requires an active X11 desktop session."
+        )
+
+    return True, "X11 session active."
 
 
 class X11Mouse:
     """Simulates mouse motion and clicks on X11 displays with 64-bit safety."""
 
     def __init__(self) -> None:
+        # Validate session compatibility
+        supported, reason = check_session_supported()
+        if not supported:
+            raise UnsupportedSessionError(reason)
+
         x11_name = ctypes.util.find_library("X11") or "libX11.so.6"
         xtst_name = ctypes.util.find_library("Xtst") or "libXtst.so.6"
 
-        self._x11 = ctypes.CDLL(x11_name)
-        self._xtst = ctypes.CDLL(xtst_name)
+        try:
+            self._x11 = ctypes.CDLL(x11_name)
+            self._xtst = ctypes.CDLL(xtst_name)
+        except Exception as exc:
+            raise UnsupportedSessionError(f"Could not load X11/Xtst libraries: {exc}")
 
         # Explicitly declare 64-bit restypes and argtypes to prevent pointer truncation
         self._x11.XOpenDisplay.restype = ctypes.c_void_p
@@ -64,7 +108,9 @@ class X11Mouse:
 
         self._display = self._x11.XOpenDisplay(None)
         if not self._display:
-            raise RuntimeError("Failed to open X11 Display")
+            raise UnsupportedSessionError(
+                "Failed to open X11 Display. Ensure an X11 server is running (standard on Linux Mint Xfce)."
+            )
 
         self._root = self._x11.XDefaultRootWindow(self._display)
         self._screen_w = self._x11.XDisplayWidth(self._display, 0)
@@ -72,7 +118,7 @@ class X11Mouse:
         log.info("X11Mouse initialized: screen %dx%d (display %s)", self._screen_w, self._screen_h, hex(self._display))
 
     def close(self) -> None:
-        if self._display:
+        if hasattr(self, "_display") and self._display:
             try:
                 self._x11.XCloseDisplay(self._display)
             except Exception:
@@ -118,7 +164,6 @@ class X11Mouse:
         cx = max(0, min(self._screen_w - 1, int(x)))
         cy = max(0, min(self._screen_h - 1, int(y)))
 
-        # screen -1 represents default screen, CurrentTime is 0
         self._xtst.XTestFakeMotionEvent(self._display, -1, cx, cy, 0)
         self._x11.XFlush(self._display)
 

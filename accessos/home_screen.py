@@ -39,7 +39,7 @@ from .power_menu import PowerMenu
 from .status_bar import StatusBar
 from .utils.config import Config
 from .settings import SettingsWindow, ConfirmDialog
-from .engine import HeadPointerEngine, TrackingState, TrackingOverlay
+from .engine import HeadPointerEngine, TrackingState, TrackingOverlay, check_session_supported
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         )
         self._tracking_overlay = TrackingOverlay(
             on_calibrate=self._engine.calibrate,
-            on_toggle_pause=self._on_pause_toggled,
+            on_toggle_pause=self._on_header_pause_clicked,
             on_stop=self._stop_tracking,
         )
 
@@ -235,7 +235,7 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._pause_btn.get_style_context().add_class("header-btn")
         self._pause_btn.get_style_context().add_class("pause-btn")
         self._pause_btn.set_tooltip_text("Pause / resume accessibility control  (Esc)")
-        self._pause_btn.connect("clicked", self._on_pause_toggled)
+        self._pause_btn.connect("clicked", self._on_header_pause_clicked)
         hbox.pack_start(self._pause_btn, False, False, 0)
 
         # Power menu button (protected dialog)
@@ -269,7 +269,7 @@ class HomeScreen(Gtk.ApplicationWindow):
 
         resume_btn = Gtk.Button(label="▶  Resume")
         resume_btn.get_style_context().add_class("header-btn")
-        resume_btn.connect("clicked", self._on_pause_toggled)
+        resume_btn.connect("clicked", lambda _: self.resume_control())
 
         banner.pack_start(icon_lbl, False, False, 12)
         banner.pack_start(text_lbl, True, True, 0)
@@ -408,27 +408,42 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     # ── Pause / resume ────────────────────────────────────────────────────────
 
-    def _on_pause_toggled(self, _widget=None) -> None:
-        self._paused = not self._paused
-
-        if self._paused:
-            self._pause_btn.set_label("▶  Resume")
+    def pause_control(self) -> None:
+        """
+        Idempotent emergency pause: ALWAYS pauses, NEVER resumes.
+        Safe against repeated Esc key presses.
+        """
+        if not self._paused:
+            self._paused = True
+            self._pause_btn.set_label("▶  Resume (R)")
             self._pause_revealer.set_reveal_child(True)
             self._dock.set_sensitive(False)
             self._audio.play("pause")
             if self._engine.state == TrackingState.TRACKING:
                 self._engine.pause()
-            log.info("Control PAUSED (keyboard/mouse fallback active)")
-        else:
-            self._pause_btn.set_label("⏸  Pause")
+            log.info("Control PAUSED via emergency pause (idempotent)")
+            self._status.set_paused(True)
+
+    def resume_control(self) -> None:
+        """
+        Explicit resume: requires explicit action (Resume button or R shortcut).
+        """
+        if self._paused:
+            self._paused = False
+            self._pause_btn.set_label("⏸  Pause (Esc)")
             self._pause_revealer.set_reveal_child(False)
             self._dock.set_sensitive(True)
             self._audio.play("resume")
             if self._engine.state == TrackingState.PAUSED:
                 self._engine.resume()
-            log.info("Control RESUMED")
+            log.info("Control RESUMED explicitly")
+            self._status.set_paused(False)
 
-        self._status.set_paused(self._paused)
+    def _on_header_pause_clicked(self, _btn: Gtk.Button) -> None:
+        if self._paused:
+            self.resume_control()
+        else:
+            self.pause_control()
 
     # ── Power ─────────────────────────────────────────────────────────────────
 
@@ -442,10 +457,17 @@ class HomeScreen(Gtk.ApplicationWindow):
     def _on_key_press(self, _widget: Gtk.Widget, event: Gdk.EventKey) -> bool:
         kv = event.keyval
 
+        # Esc: IDEMPOTENT EMERGENCY PAUSE (always pauses, never resumes)
         if kv == Gdk.KEY_Escape:
-            self._on_pause_toggled(None)
+            self.pause_control()
             return True
 
+        # R / r: EXPLICIT RESUME (only when control is currently paused)
+        if kv in (Gdk.KEY_r, Gdk.KEY_R) and self._paused:
+            self.resume_control()
+            return True
+
+        # C / c: CALIBRATION / CENTER BASELINE
         if kv in (Gdk.KEY_c, Gdk.KEY_C):
             if self._engine.state == TrackingState.TRACKING:
                 self._engine.calibrate()
@@ -521,11 +543,17 @@ class HomeScreen(Gtk.ApplicationWindow):
 
     def _start_tracking_flow(self) -> None:
         """Explicit user permission notice before opening the webcam."""
+        # Validate session compatibility
+        session_ok, session_msg = check_session_supported()
+        if not session_ok:
+            self._show_error(session_msg)
+            return
+
         confirmed = ConfirmDialog.ask(
             parent=self,
             title="Enable Camera Head Tracking?",
             message="AccessOS will activate your verified RGB webcam to track head movements for pointer control.",
-            detail="Notice:\n• Video frames are processed entirely locally and never recorded or transmitted.\n• Physical keyboard and mouse remain fully functional at all times.\n• Press Esc at any time to immediately pause camera pointer actions.",
+            detail="Notice:\n• Video frames are processed entirely locally and never recorded or transmitted.\n• Physical keyboard and mouse remain fully functional at all times.\n• Press Esc at any time to immediately pause camera pointer actions (Resume with R).",
             confirm_label="Enable Camera",
             is_destructive=False,
         )

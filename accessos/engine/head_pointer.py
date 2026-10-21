@@ -33,7 +33,7 @@ from ..settings.camera_detector import CameraDetector
 from ..utils.config import Config
 from .dwell_clicker import DwellClicker
 from .filters import PointFilter2D
-from .x11_mouse import X11Mouse
+from .x11_mouse import X11Mouse, UnsupportedSessionError, check_session_supported
 
 log = logging.getLogger(__name__)
 
@@ -360,6 +360,9 @@ class HeadPointerEngine:
                 if elapsed < target_dt:
                     time.sleep(target_dt - elapsed)
 
+        except UnsupportedSessionError as exc:
+            log.error("Unsupported session: %s", exc)
+            self._set_state(TrackingState.STOPPED, str(exc))
         except Exception as exc:
             log.error("Exception in HeadPointer worker loop: %s", exc, exc_info=True)
             self._set_state(TrackingState.STOPPED, f"Error: {exc}")

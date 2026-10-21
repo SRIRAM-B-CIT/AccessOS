@@ -55,7 +55,7 @@ print(f" Camera Hardware        : {engine._camera_device} (Chicony RGB)", flush=
 print(f" Inference Framework    : MediaPipe 1.1 + XNNPACK CPU Delegate", flush=True)
 print(f" Capture Resolution     : 640 x 480 @ 30 FPS", flush=True)
 print(f" Average Processing FPS : {avg_fps:.1f} FPS", flush=True)
-print(f" Processing Latency     : {avg_lat:.1f} ms per frame", flush=True)
+print(f" Vision-Processing Loop Latency : {avg_lat:.1f} ms per frame (frame grab -> landmarks -> filter)", flush=True)
 print(f" CPU Utilization        : {cpu:.1f}%", flush=True)
 print(f" Process RAM Footprint  : {mem_peak:.1f} MB (Delta: +{mem_peak - mem_init:.1f} MB)", flush=True)
 print("="*50, flush=True)

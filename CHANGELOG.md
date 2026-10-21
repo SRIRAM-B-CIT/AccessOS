@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.3.0] - Phase 3: Computer Vision Head Pointer & Dwell Selection
 
+### Safety & Verification Corrections (Phase 3 Post-Review)
+- **Idempotent Emergency Pause**: <kbd>Esc</kbd> is now strictly idempotent — pressing <kbd>Esc</kbd> always pauses accessibility control and never toggles or resumes it. Resuming control explicitly requires the **Resume** button, the <kbd>R</kbd> shortcut, or an approved Phase 4 voice command.
+- **Accurate Latency Terminology**: Corrected performance reports to specify **19.2 ms vision-processing loop latency** (frame acquisition, RGB conversion, MediaPipe landmark detection, and filter computation), clarifying that this is not end-to-end sensor-to-photon latency.
+- **X11 Session Validation & Wayland Refusal**: Added explicit session detection (`check_session_supported()`) and `UnsupportedSessionError`. AccessOS safely refuses to start pointer injection on pure Wayland sessions with an actionable guidance message, aligning with Linux Mint Xfce's native X11 architecture.
+- **Automated Tests Expanded**: Added automated tests for idempotent pause behavior, explicit resume, and graceful refusal of pointer injection on non-X11 sessions (50/50 tests passing).
+
 ### Added
 - **Head Pointer Vision Engine** (`accessos.engine.HeadPointerEngine`):
   - Real-time head tracking powered by MediaPipe FaceLandmarker with XNNPACK CPU acceleration.

@@ -134,3 +134,9 @@ See [CREDITS.md](CREDITS.md) for a full list of libraries and tools used.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+## Desktop Session Requirement
+AccessOS pointer injection relies on standard X11 protocols (`libX11` / `libXtst`).
+- **Target Distribution**: Linux Mint Xfce runs native X11 by default.
+- **Wayland Safety**: Pure Wayland sessions that block synthetic input events are detected at runtime; AccessOS displays a clear unsupported-session notification and refuses to start pointer injection rather than failing or crashing.

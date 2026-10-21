@@ -81,3 +81,36 @@ def test_dock_horizontal_navigation():
     # Home jumps to 0
     win._dock_nav(Gdk.KEY_Home)
     assert win._focus_idx == 0
+
+
+def test_home_screen_idempotent_pause_and_explicit_resume():
+    app = Gtk.Application(
+        application_id="org.accessos.testpauseidempotent",
+        flags=Gio.ApplicationFlags.NON_UNIQUE,
+    )
+    cfg = Config()
+    audio = AudioFeedback(enabled=False)
+    launcher = AppLauncher()
+    win = HomeScreen(app=app, config=cfg, launcher=launcher, audio=audio)
+
+    # Initial state: not paused
+    assert win._paused is False
+
+    # First emergency pause -> paused
+    win.pause_control()
+    assert win._paused is True
+
+    # IDEMPOTENCY: Repeated pause_control calls MUST stay paused, never toggle
+    win.pause_control()
+    assert win._paused is True
+
+    win.pause_control()
+    assert win._paused is True
+
+    # Explicit resume restores active control
+    win.resume_control()
+    assert win._paused is False
+
+    # Calling resume when already active does nothing
+    win.resume_control()
+    assert win._paused is False
