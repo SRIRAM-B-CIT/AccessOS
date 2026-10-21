@@ -1,0 +1,198 @@
+/*
+ * AccessOS Home Screen — GTK 3 Stylesheet
+ * Phase 1 · High-contrast dark theme
+ *
+ * Design intent:
+ *   - Deep dark navy background (#0d1117) for minimal eye strain
+ *   - High-contrast white/near-white text on dark surfaces
+ *   - Vivid blue (#4f9eff) focus ring — clearly visible for low-vision users
+ *   - Large (18 px+) text throughout
+ *   - Pause banner uses amber (#ffd166) for universal warning colour
+ *   - No animations that could trigger vestibular disorders (short, subtle only)
+ *
+ * GTK 3 limitations honoured:
+ *   - No box-shadow (unsupported)
+ *   - No background-size: cover (unsupported)
+ *   - rgba() is supported on composited displays
+ *   - transition is supported on GTK 3.22+ (used sparingly)
+ */
+
+/* ══════════════════════════════════════════════════════════════════
+   Window base
+   ══════════════════════════════════════════════════════════════════ */
+
+window#accessos-main-window {
+    background-color: #0d1117;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Header bar
+   ══════════════════════════════════════════════════════════════════ */
+
+.header-bar {
+    background-color: rgba(0, 0, 0, 0.55);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    min-height: 56px;
+    padding: 0px 4px;
+}
+
+.app-title {
+    color: #e8edf5;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.app-subtitle {
+    color: rgba(160, 180, 210, 0.75);
+    font-size: 11px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Header action buttons (Pause, Power)
+   ══════════════════════════════════════════════════════════════════ */
+
+.header-btn {
+    background-color: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    font-size: 13px;
+    padding: 6px 14px;
+    color: #c5cfe0;
+}
+
+.header-btn:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+.header-btn:focus {
+    border: 2px solid #4f9eff;
+    background-color: rgba(79, 158, 255, 0.10);
+}
+
+.header-btn:active {
+    background-color: rgba(79, 158, 255, 0.20);
+}
+
+.pause-btn {
+    color: #ffd166;
+    border-color: rgba(255, 209, 102, 0.35);
+}
+
+.pause-btn:hover {
+    background-color: rgba(255, 209, 102, 0.10);
+    border-color: rgba(255, 209, 102, 0.55);
+}
+
+.power-btn {
+    color: #ff6b6b;
+    border-color: rgba(255, 107, 107, 0.35);
+}
+
+.power-btn:hover {
+    background-color: rgba(255, 107, 107, 0.10);
+    border-color: rgba(255, 107, 107, 0.55);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Pause banner (Gtk.Revealer contents)
+   ══════════════════════════════════════════════════════════════════ */
+
+.pause-banner {
+    background-color: rgba(42, 33, 0, 0.92);
+    border-bottom: 2px solid #ffd166;
+    color: #ffd166;
+    min-height: 44px;
+    padding: 0px 4px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Launch buttons (the six main grid buttons)
+   ══════════════════════════════════════════════════════════════════ */
+
+.launch-button {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.11);
+    border-radius: 18px;
+    color: #e8edf5;
+    /* no padding here — inner Box handles spacing */
+}
+
+.launch-button:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.26);
+}
+
+/* Focus ring: bright blue, thick, unmissable */
+.launch-button:focus {
+    background-color: rgba(79, 158, 255, 0.13);
+    border: 3px solid #4f9eff;
+    /* GTK 3 does not support outline-offset, so border does the job */
+}
+
+.launch-button:active {
+    background-color: rgba(79, 158, 255, 0.24);
+    border-color: #74b3ff;
+}
+
+/* Greyed-out appearance when control is paused */
+.launch-button:insensitive {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.04);
+    color: rgba(200, 210, 220, 0.25);
+}
+
+/* Button text labels */
+.btn-label {
+    color: #e8edf5;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.btn-label:insensitive {
+    color: rgba(200, 210, 220, 0.25);
+}
+
+.btn-desc {
+    color: rgba(160, 180, 210, 0.70);
+    font-size: 11px;
+}
+
+.btn-desc:insensitive {
+    color: rgba(160, 180, 210, 0.20);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Status bar
+   ══════════════════════════════════════════════════════════════════ */
+
+.status-bar {
+    background-color: rgba(0, 0, 0, 0.52);
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    min-height: 34px;
+    padding: 0px 4px;
+}
+
+.status-label {
+    color: rgba(160, 180, 210, 0.80);
+    font-size: 12px;
+}
+
+.status-separator {
+    color: rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    margin: 0px 2px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Error / notification label (inside Gtk.Revealer in header)
+   ══════════════════════════════════════════════════════════════════ */
+
+.error-label {
+    background-color: rgba(231, 76, 60, 0.15);
+    border: 1px solid rgba(231, 76, 60, 0.45);
+    border-radius: 6px;
+    color: #ff8a80;
+    font-size: 12px;
+    padding: 4px 12px;
+}

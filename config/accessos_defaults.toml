@@ -1,0 +1,47 @@
+# AccessOS Default Configuration
+# ================================
+# This file documents every supported key and its default value.
+# To override, copy to ~/.config/accessos/settings.toml and edit.
+# Unknown keys are silently ignored.
+
+[theme]
+# Base font size in points for UI text
+font_size    = 18
+# Enable high-contrast mode (true = white-on-dark, false = system default)
+high_contrast = true
+# CSS colour for the keyboard focus ring
+focus_color  = "#4f9eff"
+
+[audio]
+# Play short UI sound cues (focus, activate, error, pause/resume)
+sounds_enabled = true
+# Enable Piper text-to-speech feedback — Phase 4 only
+tts_enabled    = false
+# Master volume (0–100)
+volume         = 80
+
+[camera]
+# V4L2 device node for face/head/eye tracking
+# On ThinkPad T480: /dev/video0 = IR camera (NOT usable), /dev/video2 = RGB
+device  = "/dev/video2"
+# Camera is disabled in Phase 1; enabled per-mode in Phase 3+
+enabled = false
+
+[apps]
+# Command lists for each application.  First element is the binary;
+# additional elements are arguments.  Must NOT use shell syntax.
+browser  = ["firefox"]
+files    = ["thunar"]
+terminal = ["xfce4-terminal"]
+images   = ["ristretto"]
+videos   = ["parole"]
+
+[accessibility]
+# Active input mode: "keyboard_mouse" | "head_pointer" | "voice" | "combined"
+mode = "keyboard_mouse"
+# Whether control is currently paused (runtime state, not usually set here)
+paused = false
+# Dwell-to-click time in milliseconds (Phase 3)
+dwell_time_ms = 1000
+# Head-pointer sensitivity multiplier 0.1–2.0 (Phase 3)
+head_sensitivity = 0.5

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Config overrides (personal, not tracked)
+config/local_*.toml
+config/user_*.toml
+
+# ISO build workspace (large, generated)
+packaging/work/
+packaging/chroot/
+packaging/binary/
+packaging/cache/
+*.iso
+*.img
+
+# Secrets
+*.pem
+*.key
+secrets.toml
+
+# Generated thumbnails
+assets/**/*.thumb.*
