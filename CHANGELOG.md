@@ -1,3 +1,36 @@
+## [Phase 3.6] - 2026-10-24 - Critical Host Input-Safety Hardening & Profile Isolation
+
+### Forensic Investigation & Findings
+- **Wayland / XWayland Event Desynchronization**: The host environment runs Zorin OS 18.1 on GNOME Shell 46 with Wayland and XWayland on `DISPLAY=:0`. When synthetic `XTestFakeButtonEvent` calls were dispatched to XWayland (such as during unmocked unit test runs in Phase 3/3.5), button-down events without immediate pairing or during desynchronized compositor grabs caused Mutter to treat Button 1 as permanently held down, causing physical mouse clicks to stop functioning.
+- **Eager Native Imports**: Previous module structure eagerly imported `ctypes` and `X11MouseBackend` whenever `accessos.engine` was imported, even during host safe runs.
+- **Unit Test Isolation Breach**: `tests/test_x11_mouse.py` previously instantiated live X11 displays and dispatched real `XTestFakeButtonEvent` releases during test execution.
+- **Process Contention**: Lack of PID exclusivity allowed multiple instances to compete or linger.
+
+### Hardened Architecture & Safeguards
+- **Three Strictly Isolated Launch Profiles**:
+  - `host-safe` (Default): Starts ONLY the GTK desktop window. Vision tracking and mouse backend are completely disabled (`None`). 0% chance of input interference.
+  - `camera-preview` (`--profile camera-preview`): Activates webcam for local reticle rendering only. Dwell clicker is strictly disabled (`None`). Uses virtual `DryRunMouseBackend` with zero OS injection.
+  - `vm-real` (`--profile vm-real`): Reserved strictly for verified VirtualBox / Live ISO sessions. Unconditionally blocked on physical host systems via `HostSafetyViolationError`.
+- **Single-Instance Exclusivity Lock**:
+  - Implemented `SingleInstanceLock` using `~/.cache/accessos/accessos.pid` and kernel `fcntl.flock`.
+  - Refuses secondary launches with actionable diagnostic recovery instructions.
+  - Automatically recovers from stale PID files after reboot or crash.
+  - Guarantees lock file removal on normal exit, exception, SIGTERM, SIGINT, and atexit.
+- **Permanent Removal of Host Bypasses**:
+  - Completely removed `ACCESSOS_FORCE_REAL_MOUSE_UNSAFE` from interactive app logic.
+  - Real pointer injection now requires verified hypervisor detection (`is_running_in_vm()`) AND an explicit VM configuration file (`config/vm_real_injection.toml`).
+- **Complete Decoupling of Native Libraries**:
+  - `accessos/engine/mouse_backend.py` is 100% free of `ctypes` and native dynamic libraries.
+  - `accessos/engine/x11_mouse.py` dynamically loads `ctypes` only inside `X11MouseBackend.__init__` after VM verification passes.
+- **Mocked Unit Test Safety**:
+  - `tests/test_x11_mouse.py` now strictly mocks `ctypes.CDLL` and `find_library`. No native X11 or XTest calls reach the host display during `pytest`.
+- **Static AST Safety Audit**:
+  - Added `tests/test_safety_audit.py` which parses AST of all host-safe files and verifies zero imports of `ctypes`, `XTest`, `libXtst`, `xdotool`, `pyautogui`, `pynput`, etc.
+- **Build & Diagnostic Transparency**:
+  - Added diagnostic banner on launch printing Git commit SHA, working directory, Python executable, package path, and PID.
+  - Added visible build version and short Git commit identifier in the desktop telemetry bar.
+  - Enforced virtual environment Python (`.venv/bin/python`) in `scripts/run_accessos.sh`.
+
 ## [Phase 3.5] - 2026-10-21 - Input-Safety Redesign & Host Isolation
 
 ### Incident Report & Root Cause

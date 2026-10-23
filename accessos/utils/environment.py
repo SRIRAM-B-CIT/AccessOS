@@ -7,7 +7,8 @@ or inside a hypervisor virtual machine (VirtualBox, QEMU/KVM, VMware).
 Safety Invariant:
   Real OS-level mouse pointer injection and synthetic clicks are
   STRICTLY PROHIBITED on host machines to prevent physical input lockups.
-  Real injection is permitted exclusively inside verified virtual machines.
+  Real injection is permitted exclusively inside verified virtual machines
+  with an active X11 session and explicit VM configuration file.
 """
 from __future__ import annotations
 
@@ -16,9 +17,11 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 log = logging.getLogger(__name__)
+
+_DEFAULT_VM_CONFIG = Path(__file__).resolve().parent.parent.parent / "config" / "vm_real_injection.toml"
 
 
 class HostSafetyViolationError(RuntimeError):
@@ -77,31 +80,37 @@ def is_running_in_vm() -> Tuple[bool, str]:
     return False, "Host Hardware (Unknown DMI)"
 
 
-def can_use_real_mouse_injection() -> Tuple[bool, str]:
+def can_use_real_mouse_injection(vm_config_path: Optional[Path] = None) -> Tuple[bool, str]:
     """
     Evaluate if real mouse injection is permitted in the current environment.
-    Rule:
-      - Blocked unconditionally on physical host hardware.
-      - Permitted inside supported virtual machines with an X11 session.
-      - Can be forcefully overridden ONLY via ACCESSOS_FORCE_REAL_MOUSE_UNSAFE=1 (for automated CI/tests).
+    Strict Policy:
+      1. BARE-METAL HOST: Unconditionally BLOCKED.
+      2. VM CONFIG: Explicit VM configuration file must exist and permit real injection.
+      3. HYPERVISOR: Verified hypervisor virtual machine required.
+      4. DISPLAY: Active X11 display required.
+    All interactive host overrides are permanently removed.
     """
-    # Explicit unsafe override flag (must be explicitly exported)
-    if os.environ.get("ACCESSOS_FORCE_REAL_MOUSE_UNSAFE", "0") == "1":
-        log.warning("SAFETY OVERRIDE: ACCESSOS_FORCE_REAL_MOUSE_UNSAFE is set!")
-        return True, "Forced unsafe mode via environment variable."
-
+    # 1. Hardware verification
     is_vm, desc = is_running_in_vm()
     if not is_vm:
         return False, (
             f"Blocked by Input-Safety Policy: {desc}. "
             "Real mouse injection is disabled on physical host machines to prevent physical input lockups. "
-            "Dry-run mode with Virtual Cursor will be used instead. "
+            "Host safe profile (UI only or Camera Preview only) must be used on host hardware. "
             "Real input testing must be performed inside a VirtualBox virtual machine."
         )
 
-    # Inside VM: ensure X11 session is active
+    # 2. Configuration file verification
+    config_file = vm_config_path or _DEFAULT_VM_CONFIG
+    if not config_file.exists():
+        return False, (
+            f"Blocked by Input-Safety Policy: Missing VM configuration file at {config_file}. "
+            "Real injection requires an explicit VM configuration file."
+        )
+
+    # 3. Session / Display verification
     display = os.environ.get("DISPLAY")
     if not display:
         return False, "Inside VM, but no active X11 display found (DISPLAY is unset)."
 
-    return True, f"Permitted: running inside {desc} with active X11 display."
+    return True, f"Permitted: running inside {desc} with active X11 display and verified VM config."

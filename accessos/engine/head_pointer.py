@@ -36,6 +36,8 @@ from .filters import PointFilter2D
 from .mouse_backend import (
     BaseMouseBackend,
     DryRunMouseBackend,
+)
+from .x11_mouse import (
     UnsupportedSessionError,
     check_session_supported,
 )
@@ -69,6 +71,7 @@ class HeadPointerEngine:
         camera_device: str | None = None,
         model_path: Path | None = None,
         mouse_backend: BaseMouseBackend | None = None,
+        preview_only: bool = False,
         on_state_changed: Callable[[TrackingState, str], None] | None = None,
         on_metrics_updated: Callable[[float, float], None] | None = None,
         on_dwell_progress: Callable[[float, int, int], None] | None = None,
@@ -87,8 +90,13 @@ class HeadPointerEngine:
 
         self._model_path = Path(model_path or _DEFAULT_MODEL)
 
-        # Default to safe DryRunMouseBackend unless an explicit backend is supplied
-        self._mouse_backend = mouse_backend or DryRunMouseBackend()
+        self.preview_only = preview_only
+
+        # In preview_only mode, real injection is strictly blocked and dry-run is forced
+        if self.preview_only:
+            self._mouse_backend = DryRunMouseBackend()
+        else:
+            self._mouse_backend = mouse_backend or DryRunMouseBackend()
 
         self.on_state_changed = on_state_changed
         self.on_metrics_updated = on_metrics_updated
@@ -102,13 +110,17 @@ class HeadPointerEngine:
 
         self._filter = PointFilter2D(deadzone=0.015, min_cutoff=1.0, beta=0.008)
 
-        # Dwell clicker
-        dwell_ms = self._config.get("accessibility", "dwell_time_ms", default=1000)
-        self._dwell = DwellClicker(
-            dwell_time_ms=dwell_ms,
-            on_progress=self._handle_dwell_progress,
-            on_click=self._handle_dwell_click,
-        )
+        # Dwell clicker (disabled in preview_only mode)
+        if self.preview_only:
+            self._dwell = None
+            log.info("HeadPointerEngine in PREVIEW_ONLY mode: DwellClicker disabled, OS input disabled")
+        else:
+            dwell_ms = self._config.get("accessibility", "dwell_time_ms", default=1000)
+            self._dwell = DwellClicker(
+                dwell_time_ms=dwell_ms,
+                on_progress=self._handle_dwell_progress,
+                on_click=self._handle_dwell_click,
+            )
 
         # Calibration baseline (normalized head center)
         self._calib_x = 0.5
@@ -175,7 +187,7 @@ class HeadPointerEngine:
     def pause(self) -> None:
         """Idempotent safety pause: cancels dwell, releases buttons, halts pointer updates."""
         self._pause_event.set()
-        self._dwell.reset()
+        if self._dwell: self._dwell.reset()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
         self._set_state(TrackingState.PAUSED, "Pointer paused safely by user")
@@ -183,7 +195,7 @@ class HeadPointerEngine:
     def resume(self) -> None:
         """Explicitly resume pointer control after a pause."""
         self._pause_event.clear()
-        self._dwell.reset()
+        if self._dwell: self._dwell.reset()
         self._set_state(TrackingState.TRACKING, "Pointer control resumed")
 
     def emergency_stop(self) -> None:
@@ -192,7 +204,7 @@ class HeadPointerEngine:
         Immediately cancels dwell, releases all synthetic buttons, stops camera and worker.
         """
         log.warning("EMERGENCY STOP triggered on HeadPointerEngine")
-        self._dwell.reset()
+        if self._dwell: self._dwell.reset()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
         self.stop()
@@ -230,7 +242,7 @@ class HeadPointerEngine:
         """Stop tracking worker thread and clean up all resources."""
         self._stop_event.set()
         self._pause_event.clear()
-        self._dwell.reset()
+        if self._dwell: self._dwell.reset()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
 
@@ -343,7 +355,7 @@ class HeadPointerEngine:
                     self._mouse_backend.move_to(target_x, target_y)
 
                     # Update dwell clicker
-                    self._dwell.update(target_x, target_y, capture_time)
+                    if self._dwell is not None: self._dwell.update(target_x, target_y, capture_time)
 
                     if tracking_lost_announced or self._state != TrackingState.TRACKING:
                         tracking_lost_announced = False
@@ -354,7 +366,7 @@ class HeadPointerEngine:
                     if not tracking_lost_announced:
                         tracking_lost_announced = True
                         log.warning("Face tracking lost — pointer frozen safely, buttons released")
-                        self._dwell.reset()
+                        if self._dwell: self._dwell.reset()
                         if self._mouse_backend:
                             self._mouse_backend.release_all_buttons()
                         self._set_state(TrackingState.LOST, "Tracking lost — keyboard/mouse active")
@@ -405,7 +417,7 @@ class HeadPointerEngine:
                 except Exception as exc:
                     log.error("Error releasing camera: %s", exc)
 
-            self._dwell.reset()
+            if self._dwell: self._dwell.reset()
             if self._mouse_backend:
                 try:
                     self._mouse_backend.release_all_buttons()

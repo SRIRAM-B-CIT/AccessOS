@@ -64,6 +64,13 @@ class StatusBar:
         self._active_mode = mode
         self._update_state()
 
+    def set_build_info(self, text: str) -> None:
+        """Set visible build version, git commit, and profile identifier."""
+        esc = GLib.markup_escape_text(text)
+        self._lbl_build.set_markup(
+            f'<span color="#7982a9" size="small">{esc}</span>'
+        )
+
     def set_focused_item(self, name: str) -> None:
         """Update the centre label with the currently focused button name."""
         self._focused_name = name
@@ -84,9 +91,12 @@ class StatusBar:
         self._lbl_mode  = self._make_label("")
         self._lbl_sep1  = self._make_sep()
         self._lbl_state = self._make_label("")
+        self._lbl_build = self._make_label("")
         left.pack_start(self._lbl_mode,  False, False, 0)
         left.pack_start(self._lbl_sep1,  False, False, 0)
         left.pack_start(self._lbl_state, False, False, 0)
+        left.pack_start(self._make_sep(), False, False, 0)
+        left.pack_start(self._lbl_build, False, False, 0)
 
         # Centre section (expands)
         centre = Gtk.Box()

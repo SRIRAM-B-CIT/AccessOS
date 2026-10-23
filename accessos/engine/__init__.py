@@ -1,7 +1,7 @@
 """
 AccessOS Accessibility Engine
 ==============================
-Phase 3 & Phase 3.5: Computer vision head-pointer tracking, dwell selection,
+Phase 3 & Phase 3.6: Computer vision head-pointer tracking, dwell selection,
 One-Euro smoothing, deadzone filters, safe DryRunMouseBackend, VirtualCursorOverlay,
 and isolated VM-only X11MouseBackend.
 """
@@ -11,14 +11,17 @@ from .filters import DeadzoneFilter, PointFilter2D, OneEuroFilter
 from .mouse_backend import (
     BaseMouseBackend,
     DryRunMouseBackend,
+    NullMouseBackend,
+)
+from .virtual_cursor import VirtualCursorOverlay
+from .tracking_overlay import TrackingOverlay
+from .x11_mouse import (
     X11MouseBackend,
     X11Mouse,
     UnsupportedSessionError,
     HostSafetyViolationError,
     check_session_supported,
 )
-from .virtual_cursor import VirtualCursorOverlay
-from .tracking_overlay import TrackingOverlay
 
 __all__ = [
     "HeadPointerEngine",
@@ -29,6 +32,7 @@ __all__ = [
     "OneEuroFilter",
     "BaseMouseBackend",
     "DryRunMouseBackend",
+    "NullMouseBackend",
     "X11MouseBackend",
     "X11Mouse",
     "UnsupportedSessionError",

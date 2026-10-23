@@ -41,6 +41,8 @@ from .utils.config import Config
 from .settings import SettingsWindow, ConfirmDialog, SystemControl
 from .voice import TTSEngine, VoiceListener, VoiceState, VoiceHUD, CommandAction
 from .engine import HeadPointerEngine, TrackingState, TrackingOverlay, DryRunMouseBackend, VirtualCursorOverlay, check_session_supported
+from .utils.profile import LaunchProfile, resolve_profile
+from .utils.build_info import get_build_info
 
 log = logging.getLogger(__name__)
 
@@ -100,36 +102,59 @@ class HomeScreen(Gtk.ApplicationWindow):
         config: Config | None = None,
         launcher: AppLauncher | None = None,
         audio: AudioFeedback | None = None,
+        profile: LaunchProfile | None = None,
     ) -> None:
         super().__init__(application=app)
         self._config   = config or Config()
         self._launcher = launcher or AppLauncher()
         self._audio    = audio or AudioFeedback(enabled=False)
+        self._profile  = profile or resolve_profile()
         self._paused   = False
 
         self._dock_btns: list[Gtk.Button] = []
         self._focus_idx = 0
 
-        # Phase 3.5: Modular Input-Safe Mouse Backend (DryRun default for host safety)
-        self._mouse_backend = DryRunMouseBackend(
-            screen_size=(1280, 720),
-            on_cursor_moved=self._on_cursor_moved,
-            on_click_event=self._on_virtual_click,
-        )
+        log.info("HomeScreen initializing under profile: %s", self._profile.value)
 
-        # Phase 3: Vision Engine & Overlay (dormant until explicitly started)
-        self._engine = HeadPointerEngine(
-            config=self._config,
-            mouse_backend=self._mouse_backend,
-            on_state_changed=self._on_tracking_state_changed,
-            on_metrics_updated=self._on_tracking_metrics,
-            on_dwell_progress=self._on_dwell_progress,
-            on_click=self._on_dwell_click,
-        )
+        # Profile-driven engine and mouse backend setup
+        if self._profile == LaunchProfile.HOST_SAFE:
+            self._mouse_backend = None
+            self._engine = None
+        elif self._profile == LaunchProfile.CAMERA_PREVIEW:
+            self._mouse_backend = DryRunMouseBackend(
+                screen_size=(1280, 720),
+                on_cursor_moved=self._on_cursor_moved,
+                on_click_event=self._on_virtual_click,
+            )
+            self._engine = HeadPointerEngine(
+                config=self._config,
+                mouse_backend=self._mouse_backend,
+                preview_only=True,
+                on_state_changed=self._on_tracking_state_changed,
+                on_metrics_updated=self._on_tracking_metrics,
+                on_dwell_progress=self._on_dwell_progress,
+                on_click=self._on_dwell_click,
+            )
+        elif self._profile == LaunchProfile.VM_REAL:
+            from .engine.x11_mouse import X11MouseBackend
+            self._mouse_backend = X11MouseBackend()
+            self._engine = HeadPointerEngine(
+                config=self._config,
+                mouse_backend=self._mouse_backend,
+                preview_only=False,
+                on_state_changed=self._on_tracking_state_changed,
+                on_metrics_updated=self._on_tracking_metrics,
+                on_dwell_progress=self._on_dwell_progress,
+                on_click=self._on_dwell_click,
+            )
+        else:
+            self._mouse_backend = None
+            self._engine = None
+
         self._tracking_overlay = TrackingOverlay(
-            on_calibrate=self._engine.calibrate,
+            on_calibrate=self._engine.calibrate if self._engine else None,
             on_toggle_pause=self._on_header_pause_clicked,
-            on_stop=self._stop_tracking,
+            on_stop=self._stop_tracking if self._engine else None,
         )
 
         # Phase 4: Voice Control & Speech Synthesis (dormant until user enables)
@@ -238,17 +263,31 @@ class HomeScreen(Gtk.ApplicationWindow):
         brand.pack_start(s_lbl, False, False, 0)
         hbox.pack_start(brand, False, False, 0)
 
-        # Phase 3.5: Prominent Safe Mode Badge
+        # Profile Safety Badge
         self._safety_badge = Gtk.Label()
-        self._safety_badge.set_markup(
-            "<span font='9' weight='bold' color='#3fb950'> 🛡️ SAFE DRY-RUN — REAL MOUSE UNAFFECTED </span>"
-        )
         self._safety_badge.get_style_context().add_class("safety-badge")
-        self._safety_badge.set_tooltip_text(
-            "Host Safety Protection: Running in safe Dry-Run mode with Virtual Cursor. "
-            "Real physical mouse and host desktop are 100% unaffected. "
-            "Real input testing is restricted to VirtualBox VMs."
-        )
+        if self._profile == LaunchProfile.HOST_SAFE:
+            self._safety_badge.set_markup(
+                "<span font='9' weight='bold' color='#3fb950'> 🛡️ HOST SAFE PROFILE — UI ONLY (NO CAMERA / NO INJECTION) </span>"
+            )
+            self._safety_badge.set_tooltip_text(
+                "Host Safety: UI-only mode with zero camera tracking and zero mouse injection. "
+                "Physical mouse and keyboard are 100% unaffected. "
+                "Launch with --profile camera-preview to test camera preview."
+            )
+        elif self._profile == LaunchProfile.CAMERA_PREVIEW:
+            self._safety_badge.set_markup(
+                "<span font='9' weight='bold' color='#e3b341'> 📷 HOST CAMERA PREVIEW ONLY — NO DWELL / NO INPUT </span>"
+            )
+            self._safety_badge.set_tooltip_text(
+                "Host Camera Preview: Renders camera preview and virtual reticle inside window only. "
+                "Dwell clicks and OS input injection are strictly disabled."
+            )
+        else:
+            self._safety_badge.set_markup(
+                "<span font='9' weight='bold' color='#f85149'> ⚠️ VM REAL INJECTION ACTIVE </span>"
+            )
+            self._safety_badge.set_tooltip_text("VM Real Injection mode active inside verified hypervisor.")
         hbox.pack_start(self._safety_badge, False, False, 12)
 
         spacer = Gtk.Box()
@@ -267,10 +306,18 @@ class HomeScreen(Gtk.ApplicationWindow):
         # Tracking HUD Overlay
         hbox.pack_start(self._tracking_overlay, False, False, 6)
 
-        # Camera Tracking Start/Stop Toggle Button
-        self._cam_btn = Gtk.Button(label="📷  Start Tracking")
+        # Camera Toggle Button
+        self._cam_btn = Gtk.Button()
         self._cam_btn.get_style_context().add_class("header-btn")
-        self._cam_btn.set_tooltip_text("Enable or disable camera head-pointer tracking")
+        if self._profile == LaunchProfile.HOST_SAFE:
+            self._cam_btn.set_label("📷  Camera (Disabled)")
+            self._cam_btn.set_tooltip_text("Camera tracking is disabled in host-safe profile. Run with --profile camera-preview for preview.")
+        elif self._profile == LaunchProfile.CAMERA_PREVIEW:
+            self._cam_btn.set_label("📷  Start Preview")
+            self._cam_btn.set_tooltip_text("Start or stop local camera preview (dwell clicking and OS input are disabled)")
+        else:
+            self._cam_btn.set_label("📷  Start Tracking")
+            self._cam_btn.set_tooltip_text("Enable or disable camera head-pointer tracking (VM real injection)")
         self._cam_btn.connect("clicked", self._on_cam_toggle_clicked)
         hbox.pack_start(self._cam_btn, False, False, 0)
 
@@ -393,6 +440,11 @@ class HomeScreen(Gtk.ApplicationWindow):
             "voice_control": "Voice (P4)",
         }.get(mode, mode)
         self._status.set_active_mode(mode_display)
+
+        # Visible build info & git commit identifier inside UI (Requirement 1)
+        info = get_build_info(profile=self._profile.value)
+        build_str = f"v{info['version']} ({info['git_commit_short']}) · PID {info['pid']} · {self._profile.value}"
+        self._status.set_build_info(build_str)
         return self._status.widget
 
     # ── Signal wiring ─────────────────────────────────────────────────────────
@@ -475,7 +527,7 @@ class HomeScreen(Gtk.ApplicationWindow):
             self._dock.set_sensitive(False)
             self._audio.play("pause")
             self._cursor_overlay.set_active(False)
-            if self._engine.state == TrackingState.TRACKING:
+            if self._engine and self._engine.state == TrackingState.TRACKING:
                 self._engine.pause()
             log.info("Control PAUSED via emergency pause (idempotent)")
             self._status.set_paused(True)
@@ -491,7 +543,7 @@ class HomeScreen(Gtk.ApplicationWindow):
             self._dock.set_sensitive(True)
             self._audio.play("resume")
             self._cursor_overlay.set_active(True)
-            if self._engine.state == TrackingState.PAUSED:
+            if self._engine and self._engine.state == TrackingState.PAUSED:
                 self._engine.resume()
             log.info("Control RESUMED explicitly")
             self._status.set_paused(False)
@@ -531,7 +583,7 @@ class HomeScreen(Gtk.ApplicationWindow):
 
         # C / c: CALIBRATION / CENTER BASELINE
         if kv in (Gdk.KEY_c, Gdk.KEY_C):
-            if self._engine.state == TrackingState.TRACKING:
+            if self._engine and self._engine.state == TrackingState.TRACKING:
                 self._engine.calibrate()
                 self._audio.play("activate")
                 return True
@@ -584,7 +636,7 @@ class HomeScreen(Gtk.ApplicationWindow):
     # ── Window delete ─────────────────────────────────────────────────────────
 
     def _on_window_size_allocate(self, _widget, alloc) -> None:
-        if isinstance(self._mouse_backend, DryRunMouseBackend):
+        if self._mouse_backend and isinstance(self._mouse_backend, DryRunMouseBackend):
             self._mouse_backend.set_screen_size(alloc.width, alloc.height)
 
     def _on_cursor_moved(self, x: int, y: int) -> None:
@@ -597,13 +649,15 @@ class HomeScreen(Gtk.ApplicationWindow):
     def _emergency_stop_all(self) -> None:
         """Universal emergency stop: halts all vision and voice engines and releases input."""
         log.warning("Universal Emergency Stop activated")
-        self._engine.emergency_stop()
+        if self._engine:
+            self._engine.emergency_stop()
         self._voice_listener.stop()
         self._tts.stop()
         self._cursor_overlay.set_active(False)
-        self._cam_btn.set_label("📷  Start Tracking")
+        cam_lbl = "📷  Camera (Disabled)" if self._profile == LaunchProfile.HOST_SAFE else ("📷  Start Preview" if self._profile == LaunchProfile.CAMERA_PREVIEW else "📷  Start Tracking")
+        self._cam_btn.set_label(cam_lbl)
         self._voice_btn.set_label("🎙️  Start Voice")
-        self._show_error("EMERGENCY STOP: All control engines halted. Synthetic input released.")
+        self._show_error("EMERGENCY STOP: All control engines halted.")
         self._audio.play("error")
 
     def _on_delete(self, _widget, _event) -> bool:
@@ -627,10 +681,38 @@ class HomeScreen(Gtk.ApplicationWindow):
     # ── Phase 3 Vision Engine Handlers ────────────────────────────────────────
 
     def _on_cam_toggle_clicked(self, _btn: Gtk.Button) -> None:
+        if self._profile == LaunchProfile.HOST_SAFE:
+            self._show_error("Camera tracking is disabled in host-safe profile. Restart with: --profile camera-preview")
+            return
+        if self._engine is None:
+            return
         if self._engine.state in (TrackingState.TRACKING, TrackingState.LOST, TrackingState.PAUSED):
             self._stop_tracking()
         else:
-            self._start_tracking_flow()
+            if self._profile == LaunchProfile.CAMERA_PREVIEW:
+                self._start_preview_flow()
+            else:
+                self._start_tracking_flow()
+
+    def _start_preview_flow(self) -> None:
+        """Local camera preview flow without dwell or system input."""
+        confirmed = ConfirmDialog.ask(
+            parent=self,
+            title="Enable Camera Preview?",
+            message="AccessOS will activate your verified RGB webcam for local reticle preview.",
+            detail="Safety Guarantee:\n• PREVIEW ONLY: Dwell clicks and OS input injection are strictly DISABLED.\n• Video frames are processed locally and never recorded or transmitted.\n• Physical keyboard and mouse remain fully functional at all times.",
+            confirm_label="Start Preview",
+            is_destructive=False,
+        )
+        if confirmed:
+            log.info("User confirmed camera preview permission")
+            self._cursor_overlay.set_active(True)
+            ok = self._engine.start()
+            if ok:
+                self._cam_btn.set_label("⏹  Stop Preview")
+                self._audio.play("activate")
+            else:
+                self._show_error("Failed to start camera preview")
 
     def _start_tracking_flow(self) -> None:
         """Explicit user permission notice before opening the webcam."""
@@ -659,9 +741,11 @@ class HomeScreen(Gtk.ApplicationWindow):
                 self._show_error("Failed to start camera tracking")
 
     def _stop_tracking(self) -> None:
-        self._engine.stop()
+        if self._engine:
+            self._engine.stop()
         self._cursor_overlay.set_active(False)
-        self._cam_btn.set_label("📷  Start Tracking")
+        cam_lbl = "📷  Start Preview" if self._profile == LaunchProfile.CAMERA_PREVIEW else "📷  Start Tracking"
+        self._cam_btn.set_label(cam_lbl)
         self._tracking_overlay.update_state(TrackingState.STOPPED)
         self._tracking_overlay.update_dwell_progress(0.0)
         self._audio.play("activate")

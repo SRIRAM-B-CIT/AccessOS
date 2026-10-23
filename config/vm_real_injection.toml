@@ -1,0 +1,22 @@
+# ==============================================================================
+# AccessOS Virtual Machine Real Pointer Injection Configuration
+# ==============================================================================
+# WARNING: This configuration file is reserved strictly for VirtualBox or target
+# Linux Mint 22.3 Xfce live ISO environments.
+#
+# Real OS-level pointer injection and synthetic clicks are PERMITTED ONLY when:
+#   1. Running inside a verified hypervisor virtual machine (DMI / systemd-detect-virt).
+#   2. This configuration file is explicitly loaded.
+#   3. An active X11 desktop display server is present.
+#
+# On bare-metal host hardware, AccessOS unconditionally blocks real injection
+# with HostSafetyViolationError regardless of this file's contents.
+# ==============================================================================
+
+[vm_safety]
+target_environment = "virtualbox"
+target_os = "Linux Mint 22.3 Xfce 64-bit"
+real_mouse_injection_permitted = true
+require_x11_session = true
+emergency_esc_pause_enabled = true
+release_all_buttons_on_stop = true

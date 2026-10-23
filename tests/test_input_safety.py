@@ -25,13 +25,14 @@ from accessos.app_launcher import AppLauncher
 from accessos.audio_feedback import AudioFeedback
 from accessos.engine.dwell_clicker import DwellClicker
 from accessos.engine.head_pointer import HeadPointerEngine, TrackingState
-from accessos.engine.mouse_backend import (
+from accessos.engine import (
     BaseMouseBackend,
     DryRunMouseBackend,
     HostSafetyViolationError,
     X11MouseBackend,
 )
 from accessos.engine.virtual_cursor import VirtualCursorOverlay
+from accessos.utils.profile import LaunchProfile
 from accessos.home_screen import HomeScreen
 from accessos.utils.config import Config
 from accessos.utils.environment import can_use_real_mouse_injection, is_running_in_vm
@@ -100,7 +101,7 @@ def test_host_safety_policy_permits_vm():
 
 def test_x11_mouse_refuses_instantiation_on_host():
     """Instantiating X11MouseBackend on host raises HostSafetyViolationError."""
-    with patch("accessos.engine.mouse_backend.can_use_real_mouse_injection", return_value=(False, "Bare metal")):
+    with patch("accessos.engine.x11_mouse.can_use_real_mouse_injection", return_value=(False, "Bare metal")):
         with pytest.raises(HostSafetyViolationError) as exc_info:
             X11MouseBackend()
         assert "Bare metal" in str(exc_info.value)
@@ -203,18 +204,19 @@ def test_virtual_cursor_overlay_updates():
 
 # ── 5. HomeScreen Safe Defaults & F12 Emergency Stop ──────────────────────────
 
-def test_home_screen_starts_in_safe_dry_run_mode():
-    """Verify HomeScreen defaults to DryRunMouseBackend with visible safety badge."""
+def test_home_screen_starts_in_host_safe_profile():
+    """Verify HomeScreen defaults to host-safe profile with zero camera and zero input backend."""
     win = HomeScreen()
 
-    # 1. Backend must be DryRunMouseBackend
-    assert isinstance(win._mouse_backend, DryRunMouseBackend)
-    assert win._mouse_backend.is_real_injection is False
+    # 1. Host-safe profile guarantees zero mouse backend and zero vision engine
+    assert win._profile == LaunchProfile.HOST_SAFE
+    assert win._mouse_backend is None
+    assert win._engine is None
 
-    # 2. Safety badge must be present in header
+    # 2. Prominent safety badge in header
     assert hasattr(win, "_safety_badge")
     label_text = win._safety_badge.get_label()
-    assert "SAFE DRY-RUN" in label_text
+    assert "HOST SAFE" in label_text
 
     # 3. VirtualCursorOverlay must be present
     assert hasattr(win, "_cursor_overlay")
@@ -223,9 +225,26 @@ def test_home_screen_starts_in_safe_dry_run_mode():
     win.destroy()
 
 
+def test_home_screen_camera_preview_profile():
+    """Verify camera-preview profile has preview_only=True, zero dwell, and zero real injection."""
+    win = HomeScreen(profile=LaunchProfile.CAMERA_PREVIEW)
+
+    assert win._profile == LaunchProfile.CAMERA_PREVIEW
+    assert isinstance(win._mouse_backend, DryRunMouseBackend)
+    assert win._mouse_backend.is_real_injection is False
+    assert win._engine is not None
+    assert win._engine.preview_only is True
+    assert win._engine._dwell is None
+
+    label_text = win._safety_badge.get_label()
+    assert "CAMERA PREVIEW" in label_text
+
+    win.destroy()
+
+
 def test_home_screen_f12_emergency_stop():
     """Verify F12 triggers universal emergency stop on all engines."""
-    win = HomeScreen()
+    win = HomeScreen(profile=LaunchProfile.CAMERA_PREVIEW)
 
     # Spy on emergency stop
     win._engine.emergency_stop = MagicMock()
