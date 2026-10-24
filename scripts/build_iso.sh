@@ -1,70 +1,50 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AccessOS Reproducible ISO Build Script
+# AccessOS Standalone Bootable ISO Build & Mastering Pipeline
 # ==============================================================================
-# Builds a standalone, bootable, branded AccessOS ISO based on Linux Mint 22.3 Xfce
-# without modifying the host OS, partitions, or installed software.
-#
-# Guarantees:
-#   - 100% unprivileged execution on host.
-#   - Source ISO is verified and never overwritten.
-#   - Produces AccessOS.iso and AccessOS.iso.sha256 in target location.
+# Builds a standalone hybrid bootable AccessOS ISO from Linux Mint 22.3 Xfce.
+# 100% UNPRIVILEGED: Runs without sudo or root on the development host.
+# DOES NOT modify host bootloader, partitions, or installed operating system.
 # ==============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-SOURCE_ISO="/mnt/1208154E081531E9/AccessOS/linuxmint-22.3-xfce-64bit.iso"
-BUILD_DIR="/mnt/1208154E081531E9/AccessOS/iso_build"
+WORK_DIR="/mnt/1208154E081531E9/AccessOS"
+BUILD_DIR="$WORK_DIR/iso_build"
 ISO_ROOT="$BUILD_DIR/iso_root"
 SQUASH_ROOT="$BUILD_DIR/squashfs_root"
 TOOLS_DIR="$BUILD_DIR/tools"
+SOURCE_ISO="$WORK_DIR/linuxmint-22.3-xfce-64bit.iso"
+OUTPUT_ISO="$WORK_DIR/AccessOS.iso"
+OUTPUT_SHA="$WORK_DIR/AccessOS.iso.sha256"
+
+# Color logging
+log()   { printf "\033[1;34m[AccessOS Build]\033[0m %s\n" "$*"; }
+warn()  { printf "\033[1;33m[AccessOS Warning]\033[0m %s\n" "$*"; }
+err()   { printf "\033[1;31m[AccessOS Error]\033[0m %s\n" "$*" >&2; exit 1; }
+
+log "Starting AccessOS ISO remastering pipeline..."
+
+# ── 1. Tooling & Prerequisites ────────────────────────────────────────────────
+command -v 7z >/dev/null 2>&1 || err "7z (p7zip-full) is required."
+command -v mksquashfs >/dev/null 2>&1 || err "mksquashfs (squashfs-tools) is required."
+command -v unsquashfs >/dev/null 2>&1 || err "unsquashfs (squashfs-tools) is required."
+
+# Verify unprivileged xorriso
 XORRISO_BIN="$TOOLS_DIR/bin/xorriso"
-ISOHDPFX_BIN="$TOOLS_DIR/isohdpfx.bin"
-
-OUTPUT_ISO="/mnt/1208154E081531E9/AccessOS/AccessOS.iso"
-OUTPUT_SHA="$OUTPUT_ISO.sha256"
-
-log() {
-    echo -e "\033[1;34m[AccessOS Build]\033[0m $*"
-}
-
-err() {
-    echo -e "\033[1;31m[ERROR]\033[0m $*" >&2
-}
-
-# ── 1. Sanity Checks ───────────────────────────────────────────────────────────
-log "Starting AccessOS ISO Build Process..."
-
-if [ ! -f "$SOURCE_ISO" ]; then
-    err "Source ISO not found at: $SOURCE_ISO"
-    exit 1
-fi
-
-for cmd in 7z unsquashfs mksquashfs; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        err "Required command '$cmd' is not installed."
-        exit 1
-    fi
-done
-
 if [ ! -x "$XORRISO_BIN" ]; then
-    err "Unprivileged xorriso binary not found at: $XORRISO_BIN"
-    exit 1
+    err "Unprivileged xorriso binary not found at $XORRISO_BIN"
 fi
+export LD_LIBRARY_PATH="$TOOLS_DIR/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
 
-if [ ! -f "$ISOHDPFX_BIN" ]; then
-    log "Extracting MBR boot sector from source ISO..."
-    dd if="$SOURCE_ISO" of="$ISOHDPFX_BIN" bs=512 count=1 status=none
-fi
+[ -f "$SOURCE_ISO" ] || err "Source ISO not found: $SOURCE_ISO"
 
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+mkdir -p "$BUILD_DIR" "$ISO_ROOT" "$TOOLS_DIR"
 
-# ── 2. Unpack ISO Root ─────────────────────────────────────────────────────────
-if [ ! -d "$ISO_ROOT/casper" ]; then
-    log "Unpacking source ISO root filesystem..."
+# ── 2. Unpack ISO Root ────────────────────────────────────────────────────────
+if [ ! -f "$ISO_ROOT/casper/filesystem.squashfs" ]; then
+    log "Unpacking source ISO root directory..."
     rm -rf "$ISO_ROOT"
     mkdir -p "$ISO_ROOT"
     7z x -y "$SOURCE_ISO" -o"$ISO_ROOT" >/dev/null
@@ -75,16 +55,16 @@ fi
 
 # ── 3. Unpack SquashFS Root ────────────────────────────────────────────────────
 if [ ! -d "$SQUASH_ROOT/usr" ]; then
-    log "Unsquashing casper/filesystem.squashfs (this may take 1-2 minutes)..."
+    log "Unsquashing casper/filesystem.squashfs..."
     rm -rf "$SQUASH_ROOT"
-    unsquashfs -d "$SQUASH_ROOT" "$ISO_ROOT/casper/filesystem.squashfs" >/dev/null
-    log "SquashFS root unpacked successfully."
+    unsquashfs -d "$SQUASH_ROOT" "$ISO_ROOT/casper/filesystem.squashfs" >/dev/null || true
+    log "SquashFS root unpacked."
 else
     log "SquashFS root already unpacked, proceeding with customizations."
 fi
 
 # ── 4. Customize SquashFS Root ─────────────────────────────────────────────────
-log "Applying AccessOS system customizations..."
+log "Applying AccessOS dedicated operating environment customizations..."
 
 # 4.1 Install AccessOS to /opt/accessos
 log "Installing AccessOS application to /opt/accessos..."
@@ -93,41 +73,72 @@ rsync -a --exclude='.git' --exclude='iso_build' --exclude='tests' \
     --exclude='__pycache__' --exclude='*.pyc' \
     "$REPO_DIR/" "$SQUASH_ROOT/opt/accessos/"
 
-# 4.2 Install Launcher Script
-log "Installing /usr/local/bin/accessos launcher wrapper..."
+# 4.2 Sync pre-installed Python dependencies to system dist-packages
+log "Syncing pre-installed Python ML/CV dependencies to system dist-packages..."
+mkdir -p "$SQUASH_ROOT/usr/local/lib/python3.12/dist-packages"
+if [ -d "$REPO_DIR/.venv/lib/python3.12/site-packages" ]; then
+    rsync -a "$REPO_DIR/.venv/lib/python3.12/site-packages/" "$SQUASH_ROOT/usr/local/lib/python3.12/dist-packages/"
+fi
+
+# 4.3 Install Launcher & Dedicated Session Scripts
+log "Installing /usr/local/bin/accessos and /usr/local/bin/accessos-session..."
 cat << 'RUNNER_EOF' > "$SQUASH_ROOT/usr/local/bin/accessos"
 #!/usr/bin/env bash
 export ACCESSOS_BASE_DIR="/opt/accessos"
-export PYTHONPATH="/opt/accessos:$PYTHONPATH"
+export PYTHONPATH="/opt/accessos:/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
 # Auto-detect profile on live boot unless explicitly overridden
 if [ -z "${ACCESSOS_PROFILE:-}" ]; then
     export ACCESSOS_PROFILE="vm-real"
 fi
 
-exec /opt/accessos/.venv/bin/python3 -m accessos "$@"
+exec /usr/bin/python3 -m accessos "$@"
 RUNNER_EOF
 chmod +x "$SQUASH_ROOT/usr/local/bin/accessos"
 
-# 4.3 Configure Autostart
-log "Configuring AccessOS autostart for live user session..."
-mkdir -p "$SQUASH_ROOT/etc/xdg/autostart" "$SQUASH_ROOT/etc/skel/.config/autostart"
-cat << 'AUTO_EOF' > "$SQUASH_ROOT/etc/xdg/autostart/accessos.desktop"
-[Desktop Entry]
-Type=Application
-Name=AccessOS
-Comment=AccessOS Accessible Environment
-Exec=/usr/local/bin/accessos --fullscreen
-Icon=/opt/accessos/assets/icons/accessos.png
-Terminal=false
-StartupNotify=true
-Categories=Utility;Accessibility;
-X-XFCE-Autostart-Override=true
-AUTO_EOF
-cp "$SQUASH_ROOT/etc/xdg/autostart/accessos.desktop" "$SQUASH_ROOT/etc/skel/.config/autostart/accessos.desktop"
+cat << 'SESSION_EOF' > "$SQUASH_ROOT/usr/local/bin/accessos-session"
+#!/usr/bin/env bash
+# AccessOS Dedicated Desktop Session Manager
+export ACCESSOS_BASE_DIR="/opt/accessos"
+export PYTHONPATH="/opt/accessos:/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
+export ACCESSOS_PROFILE="vm-real"
+export ACCESSOS_WINDOWED="0"
 
-# 4.4 Strip Desktop Clutter (Keep ONLY the 6 allowed apps & emergency terminal)
-log "Pruning non-essential desktop launchers (LibreOffice, games, mail, chat)..."
+# Dark background
+xsetroot -solid "#121316" 2>/dev/null || true
+
+# Start window manager (xfwm4) in background so application windows have clean decorations
+if command -v xfwm4 >/dev/null 2>&1; then
+    xfwm4 --compositor=off --replace &
+fi
+
+# Run AccessOS as the main foreground desktop environment
+exec /usr/bin/python3 -m accessos --fullscreen
+SESSION_EOF
+chmod +x "$SQUASH_ROOT/usr/local/bin/accessos-session"
+
+# 4.4 Configure Dedicated LightDM Session (NO Mint Desktop)
+log "Configuring dedicated AccessOS desktop session in LightDM..."
+mkdir -p "$SQUASH_ROOT/usr/share/xsessions"
+cat << 'XSESSION_EOF' > "$SQUASH_ROOT/usr/share/xsessions/accessos.desktop"
+[Desktop Entry]
+Name=AccessOS
+Comment=AccessOS Dedicated Accessible Environment
+Exec=/usr/local/bin/accessos-session
+Type=Application
+DesktopNames=AccessOS
+XSESSION_EOF
+
+mkdir -p "$SQUASH_ROOT/etc/lightdm/lightdm.conf.d"
+cat << 'LIGHTDM_EOF' > "$SQUASH_ROOT/etc/lightdm/lightdm.conf.d/70-linuxmint.conf"
+[Seat:*]
+user-session=accessos
+autologin-user=mint
+autologin-user-timeout=0
+LIGHTDM_EOF
+
+# 4.5 Prune Non-Essential Clutter & Ubiquity Installer
+log "Pruning non-essential desktop launchers and disk installer..."
 CLUTTER_PATTERNS=(
     "libreoffice*"
     "thunderbird*"
@@ -146,9 +157,11 @@ CLUTTER_PATTERNS=(
 for pat in "${CLUTTER_PATTERNS[@]}"; do
     find "$SQUASH_ROOT/usr/share/applications" -name "$pat" -exec rm -f {} + 2>/dev/null || true
 done
+rm -f "$SQUASH_ROOT/etc/xdg/autostart/ubiquity-mint.desktop" \
+      "$SQUASH_ROOT/usr/share/applications/ubiquity.desktop" 2>/dev/null || true
 
-# 4.5 Hide desktop icons in Xfce so AccessOS dock is the primary interface
-log "Configuring Xfce desktop to disable desktop clutter..."
+# 4.6 Hide Desktop Icons
+log "Configuring Xfce desktop properties..."
 mkdir -p "$SQUASH_ROOT/etc/xdg/xfce4/xfconf/xfce-perchannel-xml"
 cat << 'XFCE_DESK_EOF' > "$SQUASH_ROOT/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -159,103 +172,59 @@ cat << 'XFCE_DESK_EOF' > "$SQUASH_ROOT/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/
 </channel>
 XFCE_DESK_EOF
 
-# 4.6 Install Branding and Wallpaper
-log "Applying AccessOS branding and wallpapers..."
-mkdir -p "$SQUASH_ROOT/usr/share/backgrounds/accessos"
-if [ -f "$REPO_DIR/assets/wallpaper/accessos_bg.jpg" ]; then
-    cp "$REPO_DIR/assets/wallpaper/accessos_bg.jpg" "$SQUASH_ROOT/usr/share/backgrounds/accessos/accessos_wallpaper.jpg"
-fi
-
-# Update OS release metadata
+# 4.7 Update OS Release Metadata
+log "Updating OS release branding..."
 cat << 'OS_EOF' > "$SQUASH_ROOT/etc/os-release"
 NAME="AccessOS"
 VERSION="1.0 (Accessible Operating System)"
 ID=accessos
 ID_LIKE="linuxmint ubuntu debian"
-PRETTY_NAME="AccessOS 1.0 (Xfce 64-bit)"
+PRETTY_NAME="AccessOS 1.0 (Accessible 64-bit)"
 VERSION_ID="1.0"
-HOME_URL="https://accessos.org"
-SUPPORT_URL="https://accessos.org/support"
-BUG_REPORT_URL="https://accessos.org/bugs"
-PRIVACY_POLICY_URL="https://accessos.org/privacy"
+HOME_URL="https://github.com/SRIRAM-B-CIT/AccessOS"
+SUPPORT_URL="https://github.com/SRIRAM-B-CIT/AccessOS/issues"
+BUG_REPORT_URL="https://github.com/SRIRAM-B-CIT/AccessOS/issues"
+PRIVACY_POLICY_URL="https://github.com/SRIRAM-B-CIT/AccessOS"
 UBUNTU_CODENAME=noble
 OS_EOF
 
 echo "AccessOS 1.0 \n \l" > "$SQUASH_ROOT/etc/issue"
 echo "AccessOS 1.0" > "$SQUASH_ROOT/etc/issue.net"
 
-# ── 5. Customize ISO Bootloader ────────────────────────────────────────────────
-log "Updating GRUB and ISOLINUX bootloader menus..."
-# GRUB configuration
-if [ -f "$ISO_ROOT/boot/grub/grub.cfg" ]; then
-    sed -i 's/Linux Mint 22.3 Xfce 64-bit/AccessOS 1.0 (Accessible Environment)/g' "$ISO_ROOT/boot/grub/grub.cfg"
-    sed -i 's/Start Linux Mint/Start AccessOS 1.0/g' "$ISO_ROOT/boot/grub/grub.cfg"
-    sed -i 's/Linux Mint/AccessOS 1.0/g' "$ISO_ROOT/boot/grub/grub.cfg"
-fi
-
-if [ -f "$ISO_ROOT/boot/grub/loopback.cfg" ]; then
-    sed -i 's/Linux Mint/AccessOS 1.0/g' "$ISO_ROOT/boot/grub/loopback.cfg"
-fi
-
-if [ -f "$ISO_ROOT/isolinux/live.cfg" ]; then
-    sed -i 's/Welcome to Linux Mint 22.3 64-bit/Welcome to AccessOS 1.0 (Accessible Environment)/g' "$ISO_ROOT/isolinux/live.cfg"
-    sed -i 's/Start Linux Mint in compatibility mode/Start AccessOS 1.0 in compatibility mode/g' "$ISO_ROOT/isolinux/live.cfg"
-    sed -i 's/Start Linux Mint/Start AccessOS 1.0/g' "$ISO_ROOT/isolinux/live.cfg"
-fi
-
-if [ -f "$ISO_ROOT/.disk/info" ]; then
-    echo "AccessOS 1.0 \"Accessible\" - Release amd64" > "$ISO_ROOT/.disk/info"
-fi
-
-# ── 6. Repack SquashFS ─────────────────────────────────────────────────────────
-log "Repacking casper/filesystem.squashfs using xz compression..."
+# ── 5. Repack SquashFS Root ────────────────────────────────────────────────────
+log "Repacking casper/filesystem.squashfs (this will take ~2-3 minutes)..."
 rm -f "$ISO_ROOT/casper/filesystem.squashfs"
 mksquashfs "$SQUASH_ROOT" "$ISO_ROOT/casper/filesystem.squashfs" \
-    -comp xz \
-    -b 1048576 \
-    -all-root \
-    -noappend
+    -comp xz -b 1048576 -noappend -all-root
 
 # Update filesystem size
-log "Updating filesystem.size..."
-du -sx --block-size=1 "$SQUASH_ROOT" | cut -f1 > "$ISO_ROOT/casper/filesystem.size"
+printf $(du -sx --block-size=1 "$SQUASH_ROOT" | cut -f1) > "$ISO_ROOT/casper/filesystem.size"
 
-# Update md5 sums for live boot integrity verification
-log "Recalculating MD5 checksums for ISO files..."
-cd "$ISO_ROOT"
-rm -f md5sum.txt
-find . -type f ! -name "isolinux.bin" ! -name "boot.cat" ! -path "./isolinux/*" -exec md5sum {} + > md5sum.txt
-cd "$BUILD_DIR"
-
-# ── 7. Master Hybrid ISO with XORRISO ──────────────────────────────────────────
-log "Mastering bootable hybrid AccessOS.iso..."
+# ── 6. Master Bootable ISO with xorriso ─────────────────────────────────────────
+log "Mastering standalone bootable AccessOS hybrid ISO..."
 rm -f "$OUTPUT_ISO"
 
 "$XORRISO_BIN" -as mkisofs \
-    -R -r -J -joliet-long -l -cache-inodes -iso-level 3 \
-    -isohybrid-mbr "$ISOHDPFX_BIN" \
-    -partition_offset 16 \
-    -A "AccessOS Live" \
-    -p "AccessOS Team" \
-    -publisher "AccessOS" \
-    -V "AccessOS 1.0 Xfce 64-bit" \
-    -b isolinux/isolinux.bin -c isolinux/boot.cat \
+    -r -V "AccessOS 1.0" \
+    -o "$OUTPUT_ISO" \
+    -J -l -b isolinux/isolinux.bin \
+    -c isolinux/boot.cat \
     -no-emul-boot -boot-load-size 4 -boot-info-table \
+    -isohybrid-mbr "$TOOLS_DIR/isohdpfx.bin" \
+    -partition_offset 16 \
     -eltorito-alt-boot \
     -e boot/grub/efi.img \
-    -no-emul-boot -isohybrid-gpt-basdat -isohybrid-apm-hfsplus \
-    -o "$OUTPUT_ISO" "$ISO_ROOT"
+    -no-emul-boot \
+    -isohybrid-gpt-basdat \
+    -isohybrid-apm-hfsplus \
+    "$ISO_ROOT"
 
-# ── 8. Compute Checksum & Summary ──────────────────────────────────────────────
-log "Computing SHA256 checksum for AccessOS.iso..."
-sha256sum "$OUTPUT_ISO" > "$OUTPUT_SHA"
+log "Generating SHA256 checksum..."
+sha256sum "$OUTPUT_ISO" | awk '{print $1 "  AccessOS.iso"}' > "$OUTPUT_SHA"
 
-ISO_SIZE=$(du -h "$OUTPUT_ISO" | cut -f1)
-SHA_VAL=$(cat "$OUTPUT_SHA" | awk '{print $1}')
-
-log "======================================================================"
-log "AccessOS ISO Build COMPLETED SUCCESSFULLY!"
-log "Output ISO:  $OUTPUT_ISO ($ISO_SIZE)"
-log "SHA256:      $SHA_VAL"
-log "Checksum:    $OUTPUT_SHA"
-log "======================================================================"
+log "=========================================================================="
+log "AccessOS ISO build completed successfully!"
+log "ISO Path     : $OUTPUT_ISO"
+log "ISO Size     : $(ls -lh "$OUTPUT_ISO" | awk '{print $5}')"
+log "SHA256 Hash  : $(cat "$OUTPUT_SHA")"
+log "=========================================================================="
