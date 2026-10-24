@@ -187,7 +187,8 @@ echo "AccessOS 1.0" > "$SQUASH_ROOT/etc/issue.net"
 log "Updating GRUB and ISOLINUX bootloader menus..."
 # GRUB configuration
 if [ -f "$ISO_ROOT/boot/grub/grub.cfg" ]; then
-    sed -i 's/Linux Mint 22.3 Xfce 64-bit/Start AccessOS 1.0 (Accessible Environment)/g' "$ISO_ROOT/boot/grub/grub.cfg"
+    sed -i 's/Linux Mint 22.3 Xfce 64-bit/AccessOS 1.0 (Accessible Environment)/g' "$ISO_ROOT/boot/grub/grub.cfg"
+    sed -i 's/Start Linux Mint/Start AccessOS 1.0/g' "$ISO_ROOT/boot/grub/grub.cfg"
     sed -i 's/Linux Mint/AccessOS 1.0/g' "$ISO_ROOT/boot/grub/grub.cfg"
 fi
 
@@ -195,8 +196,10 @@ if [ -f "$ISO_ROOT/boot/grub/loopback.cfg" ]; then
     sed -i 's/Linux Mint/AccessOS 1.0/g' "$ISO_ROOT/boot/grub/loopback.cfg"
 fi
 
-if [ -f "$ISO_ROOT/isolinux/isolinux.cfg" ]; then
-    sed -i 's/Linux Mint/AccessOS 1.0/g' "$ISO_ROOT/isolinux/isolinux.cfg"
+if [ -f "$ISO_ROOT/isolinux/live.cfg" ]; then
+    sed -i 's/Welcome to Linux Mint 22.3 64-bit/Welcome to AccessOS 1.0 (Accessible Environment)/g' "$ISO_ROOT/isolinux/live.cfg"
+    sed -i 's/Start Linux Mint in compatibility mode/Start AccessOS 1.0 in compatibility mode/g' "$ISO_ROOT/isolinux/live.cfg"
+    sed -i 's/Start Linux Mint/Start AccessOS 1.0/g' "$ISO_ROOT/isolinux/live.cfg"
 fi
 
 if [ -f "$ISO_ROOT/.disk/info" ]; then
