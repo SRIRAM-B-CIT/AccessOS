@@ -4,6 +4,7 @@ AccessOS Offline Speech Synthesis (Piper TTS)
 Fully local, natural neural speech feedback using Piper TTS.
 Streams audio in-memory to ALSA (aplay). Never stores audio files on disk.
 Asynchronous thread-safe worker queue prevents blocking the UI.
+Tracks active speech state for feedback-loop suppression in VoiceListener.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import queue
 import shutil
 import subprocess
 import threading
+import time
 import wave
 from pathlib import Path
 from typing import Optional
@@ -33,7 +35,19 @@ class TTSEngine:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-        # Lazy loading on first speak() prevents blocking UI / app startup
+        # Feedback-loop tracking state
+        self._is_speaking: bool = False
+        self._last_speech_ended_time: float = 0.0
+
+    @property
+    def is_speaking(self) -> bool:
+        """True while Piper TTS is actively speaking audio through the output device."""
+        return self._is_speaking
+
+    @property
+    def last_speech_ended_time(self) -> float:
+        """Monotonic timestamp of when the last spoken audio completed playback."""
+        return self._last_speech_ended_time
 
     def _load_model(self) -> bool:
         if not self.model_path.exists():
@@ -110,6 +124,8 @@ class TTSEngine:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
         self._thread = None
+        self._is_speaking = False
+        self._last_speech_ended_time = time.monotonic()
 
     def _worker_loop(self) -> None:
         log.info("Piper TTS worker loop started")
@@ -132,15 +148,22 @@ class TTSEngine:
 
                 wav_bytes = mem_buf.getvalue()
                 if wav_bytes:
-                    proc = subprocess.Popen(
-                        [aplay_bin, "-q"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    proc.communicate(input=wav_bytes, timeout=5.0)
+                    self._is_speaking = True
+                    try:
+                        proc = subprocess.Popen(
+                            [aplay_bin, "-q"],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        proc.communicate(input=wav_bytes, timeout=15.0)
+                    finally:
+                        self._is_speaking = False
+                        self._last_speech_ended_time = time.monotonic()
 
             except Exception as exc:
+                self._is_speaking = False
+                self._last_speech_ended_time = time.monotonic()
                 log.error("TTS synthesis error on '%s': %s", text, exc)
             finally:
                 self._queue.task_done()

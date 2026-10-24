@@ -269,3 +269,69 @@ def test_voice_hud_state_transitions():
 
     set_and_flush(VoiceState.OFF)
     assert style.has_class("voice-off")
+
+
+# ── 7. Feedback Loop Suppression & Duplicate Cooldown Tests ───────────────────
+
+def test_tts_feedback_loop_suppression():
+    """Voice input must be suppressed while TTS is speaking and during post-speech cooldown."""
+    tts = MagicMock(spec=TTSEngine)
+    cmd_handler = MagicMock()
+    listener = VoiceListener(tts=tts, on_command=cmd_handler, post_tts_suppression_sec=0.5)
+
+    # 1. TTS is speaking -> is_tts_suppressed() is True
+    tts.is_speaking = True
+    tts.last_speech_ended_time = time.monotonic() - 10.0
+    assert listener.is_tts_suppressed() is True
+
+    # Speech input must be dropped without calling handler
+    listener._handle_recognized_text("open browser")
+    cmd_handler.assert_not_called()
+
+    # 2. TTS stopped speaking 0.2s ago (< 0.5s post-speech interval) -> still suppressed
+    tts.is_speaking = False
+    tts.last_speech_ended_time = time.monotonic() - 0.2
+    assert listener.is_tts_suppressed() is True
+
+    listener._handle_recognized_text("open files")
+    cmd_handler.assert_not_called()
+
+    # 3. Post-speech interval expired (0.6s > 0.5s) -> suppression lifted
+    tts.last_speech_ended_time = time.monotonic() - 0.6
+    assert listener.is_tts_suppressed() is False
+
+    listener._handle_recognized_text("open browser")
+    cmd_handler.assert_called_once_with(CommandAction.OPEN_BROWSER)
+
+
+def test_duplicate_command_cooldown():
+    """Identical speech commands within cooldown interval must be debounced."""
+    tts = MagicMock(spec=TTSEngine)
+    tts.is_speaking = False
+    tts.last_speech_ended_time = 0.0
+
+    cmd_handler = MagicMock()
+    listener = VoiceListener(tts=tts, on_command=cmd_handler, duplicate_cooldown_sec=1.5)
+
+    # First utterance triggers action
+    listener._handle_recognized_text("volume up")
+    assert cmd_handler.call_count == 1
+
+    # Immediate duplicate utterance must be suppressed
+    listener._handle_recognized_text("volume up")
+    assert cmd_handler.call_count == 1
+
+    # A different command is immediately accepted
+    listener._handle_recognized_text("volume down")
+    assert cmd_handler.call_count == 2
+
+
+def test_document_reader_voice_commands():
+    """Verify document reader commands are recognized in allowlist."""
+    assert parse_command("read document") == CommandAction.READ_DOCUMENT
+    assert parse_command("read aloud") == CommandAction.READ_DOCUMENT
+    assert parse_command("pause reading") == CommandAction.PAUSE_READING
+    assert parse_command("resume reading") == CommandAction.RESUME_READING
+    assert parse_command("stop reading") == CommandAction.STOP_READING
+    assert parse_command("read faster") == CommandAction.READING_FASTER
+    assert parse_command("slower") == CommandAction.READING_SLOWER

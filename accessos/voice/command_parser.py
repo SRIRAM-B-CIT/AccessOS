@@ -7,6 +7,7 @@ Guarantees:
   - Matches exclusively against an explicit allowlist of safe commands.
   - Rejects any dangerous tokens (rm, sudo, bash, delete, install, etc.).
   - Distinguishes direct commands from actions requiring spoken confirmation.
+  - Includes document reader accessibility control commands.
 """
 from __future__ import annotations
 
@@ -37,6 +38,14 @@ class CommandAction(enum.Enum):
     VOLUME_UP         = "VOLUME_UP"
     VOLUME_DOWN       = "VOLUME_DOWN"
 
+    # Document reading controls (Accessibility feature)
+    READ_DOCUMENT     = "READ_DOCUMENT"
+    PAUSE_READING     = "PAUSE_READING"
+    RESUME_READING    = "RESUME_READING"
+    STOP_READING      = "STOP_READING"
+    READING_FASTER    = "READING_FASTER"
+    READING_SLOWER    = "READING_SLOWER"
+
     # Protected system actions (require spoken confirmation)
     RESTART_REQUEST   = "RESTART_REQUEST"
     SHUTDOWN_REQUEST  = "SHUTDOWN_REQUEST"
@@ -56,90 +65,102 @@ DANGEROUS_TOKENS: Set[str] = {
 # Explicit phrase mapping to approved actions
 COMMAND_ALLOWLIST: Dict[str, CommandAction] = {
     # Browser
-    "open browser":      CommandAction.OPEN_BROWSER,
-    "launch browser":    CommandAction.OPEN_BROWSER,
-    "web browser":       CommandAction.OPEN_BROWSER,
-    "browser":           CommandAction.OPEN_BROWSER,
+    "open browser":       CommandAction.OPEN_BROWSER,
+    "launch browser":     CommandAction.OPEN_BROWSER,
+    "web browser":        CommandAction.OPEN_BROWSER,
+    "browser":            CommandAction.OPEN_BROWSER,
 
     # Files
-    "open files":        CommandAction.OPEN_FILES,
-    "launch files":      CommandAction.OPEN_FILES,
-    "file manager":      CommandAction.OPEN_FILES,
-    "files":             CommandAction.OPEN_FILES,
+    "open files":         CommandAction.OPEN_FILES,
+    "launch files":       CommandAction.OPEN_FILES,
+    "file manager":       CommandAction.OPEN_FILES,
+    "files":              CommandAction.OPEN_FILES,
 
     # Terminal
-    "open terminal":     CommandAction.OPEN_TERMINAL,
-    "launch terminal":   CommandAction.OPEN_TERMINAL,
-    "terminal":          CommandAction.OPEN_TERMINAL,
+    "open terminal":      CommandAction.OPEN_TERMINAL,
+    "launch terminal":    CommandAction.OPEN_TERMINAL,
+    "terminal":           CommandAction.OPEN_TERMINAL,
 
     # Settings
-    "open settings":     CommandAction.OPEN_SETTINGS,
-    "launch settings":   CommandAction.OPEN_SETTINGS,
-    "settings":          CommandAction.OPEN_SETTINGS,
+    "open settings":      CommandAction.OPEN_SETTINGS,
+    "launch settings":    CommandAction.OPEN_SETTINGS,
+    "settings":           CommandAction.OPEN_SETTINGS,
 
     # Images
-    "open images":       CommandAction.OPEN_IMAGES,
-    "view images":       CommandAction.OPEN_IMAGES,
-    "pictures":          CommandAction.OPEN_IMAGES,
-    "images":            CommandAction.OPEN_IMAGES,
+    "open images":        CommandAction.OPEN_IMAGES,
+    "view images":        CommandAction.OPEN_IMAGES,
+    "pictures":           CommandAction.OPEN_IMAGES,
+    "images":             CommandAction.OPEN_IMAGES,
 
     # Videos
-    "open videos":       CommandAction.OPEN_VIDEOS,
-    "play videos":       CommandAction.OPEN_VIDEOS,
-    "media player":      CommandAction.OPEN_VIDEOS,
-    "videos":            CommandAction.OPEN_VIDEOS,
+    "open videos":        CommandAction.OPEN_VIDEOS,
+    "play videos":        CommandAction.OPEN_VIDEOS,
+    "media player":       CommandAction.OPEN_VIDEOS,
+    "videos":             CommandAction.OPEN_VIDEOS,
 
     # Navigation & control
-    "go home":           CommandAction.GO_HOME,
-    "home screen":       CommandAction.GO_HOME,
-    "home":              CommandAction.GO_HOME,
+    "go home":            CommandAction.GO_HOME,
+    "home screen":        CommandAction.GO_HOME,
+    "home":               CommandAction.GO_HOME,
 
-    "pause control":     CommandAction.PAUSE_CONTROL,
-    "pause":             CommandAction.PAUSE_CONTROL,
+    "pause control":      CommandAction.PAUSE_CONTROL,
+    "pause":              CommandAction.PAUSE_CONTROL,
 
-    "resume control":    CommandAction.RESUME_CONTROL,
-    "resume":            CommandAction.RESUME_CONTROL,
+    "resume control":     CommandAction.RESUME_CONTROL,
+    "resume":             CommandAction.RESUME_CONTROL,
 
-    "stop tracking":     CommandAction.STOP_TRACKING,
-    "stop camera":       CommandAction.STOP_TRACKING,
-    "disable camera":    CommandAction.STOP_TRACKING,
+    "stop tracking":      CommandAction.STOP_TRACKING,
+    "stop camera":        CommandAction.STOP_TRACKING,
+    "disable camera":     CommandAction.STOP_TRACKING,
 
-    "read status":       CommandAction.READ_STATUS,
-    "status":            CommandAction.READ_STATUS,
-    "system status":     CommandAction.READ_STATUS,
+    "read status":        CommandAction.READ_STATUS,
+    "status":             CommandAction.READ_STATUS,
+    "system status":      CommandAction.READ_STATUS,
 
-    "help":              CommandAction.HELP,
-    "what can i say":    CommandAction.HELP,
-    "commands":          CommandAction.HELP,
+    "help":               CommandAction.HELP,
+    "what can i say":     CommandAction.HELP,
+    "commands":           CommandAction.HELP,
 
-    "volume up":         CommandAction.VOLUME_UP,
-    "increase volume":   CommandAction.VOLUME_UP,
-    "louder":            CommandAction.VOLUME_UP,
+    "volume up":          CommandAction.VOLUME_UP,
+    "increase volume":    CommandAction.VOLUME_UP,
+    "louder":             CommandAction.VOLUME_UP,
 
-    "volume down":       CommandAction.VOLUME_DOWN,
-    "decrease volume":   CommandAction.VOLUME_DOWN,
-    "softer":            CommandAction.VOLUME_DOWN,
-    "quieter":           CommandAction.VOLUME_DOWN,
+    "volume down":        CommandAction.VOLUME_DOWN,
+    "decrease volume":    CommandAction.VOLUME_DOWN,
+    "softer":             CommandAction.VOLUME_DOWN,
+    "quieter":            CommandAction.VOLUME_DOWN,
+
+    # Document reading controls
+    "read document":      CommandAction.READ_DOCUMENT,
+    "read aloud":         CommandAction.READ_DOCUMENT,
+    "read file":          CommandAction.READ_DOCUMENT,
+    "pause reading":      CommandAction.PAUSE_READING,
+    "resume reading":     CommandAction.RESUME_READING,
+    "stop reading":       CommandAction.STOP_READING,
+    "read faster":        CommandAction.READING_FASTER,
+    "faster":             CommandAction.READING_FASTER,
+    "read slower":        CommandAction.READING_SLOWER,
+    "slower":             CommandAction.READING_SLOWER,
 
     # System Power (Protected)
-    "restart":           CommandAction.RESTART_REQUEST,
-    "reboot system":     CommandAction.RESTART_REQUEST,
-    "restart computer":  CommandAction.RESTART_REQUEST,
+    "restart":            CommandAction.RESTART_REQUEST,
+    "reboot system":      CommandAction.RESTART_REQUEST,
+    "restart computer":   CommandAction.RESTART_REQUEST,
 
-    "shutdown":          CommandAction.SHUTDOWN_REQUEST,
-    "power off":         CommandAction.SHUTDOWN_REQUEST,
-    "shut down":         CommandAction.SHUTDOWN_REQUEST,
-    "shut down computer":CommandAction.SHUTDOWN_REQUEST,
+    "shutdown":           CommandAction.SHUTDOWN_REQUEST,
+    "power off":          CommandAction.SHUTDOWN_REQUEST,
+    "shut down":          CommandAction.SHUTDOWN_REQUEST,
+    "shut down computer": CommandAction.SHUTDOWN_REQUEST,
 
     # Spoken Confirmation
-    "confirm":           CommandAction.CONFIRM_YES,
-    "yes":               CommandAction.CONFIRM_YES,
-    "confirm restart":   CommandAction.CONFIRM_YES,
-    "confirm shutdown":  CommandAction.CONFIRM_YES,
+    "confirm":            CommandAction.CONFIRM_YES,
+    "yes":                CommandAction.CONFIRM_YES,
+    "confirm restart":    CommandAction.CONFIRM_YES,
+    "confirm shutdown":   CommandAction.CONFIRM_YES,
 
-    "cancel":            CommandAction.CONFIRM_CANCEL,
-    "no":                CommandAction.CONFIRM_CANCEL,
-    "abort":             CommandAction.CONFIRM_CANCEL,
+    "cancel":             CommandAction.CONFIRM_CANCEL,
+    "no":                 CommandAction.CONFIRM_CANCEL,
+    "abort":              CommandAction.CONFIRM_CANCEL,
 }
 
 
