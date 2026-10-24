@@ -99,6 +99,67 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.0] - Standalone Bootable AccessOS ISO & Live USB Release
+
+### Added
+- **Reproducible ISO Build Pipeline** (`scripts/build_iso.sh`):
+  - Builds standalone hybrid bootable `AccessOS.iso` from Linux Mint 22.3 Xfce base.
+  - 100% unprivileged execution on host; zero modification to host bootloader, host partitions, or installed packages.
+  - Prunes all non-essential applications (LibreOffice, Thunderbird, HexChat, Solitaire, software managers).
+  - Configures LightDM live autologin, Xfce desktop decluttering (disables desktop icons), and autostarting AccessOS in fullscreen.
+  - Integrates `/usr/local/bin/accessos` launcher wrapper and `/opt/accessos` installation.
+  - Full AccessOS branding in `/etc/os-release`, `/etc/issue`, GRUB, and ISOLINUX bootloaders.
+- **Accessible Document Reader** (`accessos.reader`):
+  - Multi-format text extraction engine (`.txt`, `.md`, `.html`, `.pdf` via pdftotext, `.docx` via zip XML, `.odt` via zip XML, `.epub` via zip XHTML, image document notice).
+  - Synchronized sentence-level speech playback powered by Piper TTS with active sentence highlighting.
+  - Keyboard accessibility (<kbd>Ctrl+R</kbd> open, <kbd>Space</kbd> play/pause, <kbd>Left/Right</kbd> navigate, <kbd>S</kbd> stop, <kbd>O</kbd> open file, <kbd>Esc</kbd> close).
+  - Hands-free voice commands allowlisted for all reading operations.
+- **First-Boot Accessible Onboarding Wizard** (`accessos.onboarding.OnboardingWizard`):
+  - Step-by-step accessible first-run configuration with spoken voice guidance (Piper).
+  - Modality selector (Keyboard/Mouse, Voice Only, Head Pointer + Dwell, Head Pointer + Blink, Combined).
+  - Explicit camera and microphone opt-in consent switches.
+  - High-contrast visual and font size adjustments.
+  - Can be re-launched at any time from Settings.
+- **Flashing & User Guides**:
+  - `docs/usb_flashing_guide.md`: Detailed instructions for safe flashing via `dd`, Raspberry Pi Imager, and BalenaEtcher with device identification warnings.
+  - `docs/user_guide.md`: Complete guide covering all six dock applications, input modalities, and document reading.
+  - `docs/safety_and_recovery_guide.md`: In-depth documentation of safety profile isolation, idempotent pause, and emergency terminal recovery.
+  - `docs/testing_checklist.md`: Step-by-step verification checklist for VM and live USB testing.
+
+## [0.6.0] - Deliberate Blink Detection & Experimental Eye Gaze Tracking
+
+### Added
+- **Deliberate Blink Selection Engine** (`accessos.engine.BlinkDetector`):
+  - Real-time Eye Aspect Ratio (EAR) computation from 6 facial landmarks per eye.
+  - Distinguishes intentional selection blinks (200ms–800ms) from natural involuntary blinks (80ms–150ms).
+  - Refractory cooldown period (600ms) to prevent accidental repeated clicks.
+  - Distinctive cyan ripple animation on VirtualCursorOverlay upon blink trigger.
+- **Experimental 2D Eye Gaze Tracker** (`accessos.engine.GazeTracker`):
+  - Extracts iris-to-canthus normalized pupil position ratios.
+  - Guided 5-point calibration workflow (Center, Top-Left, Top-Right, Bottom-Left, Bottom-Right) with visual bullseye target rendering.
+  - One-Euro smoothing filter for gaze jitter reduction.
+  - Documented accuracy limitation disclaimer for standard integrated 720p webcams.
+- **Audio Feedback Loop Suppression**:
+  - TTS speech state tracking (`is_speaking`, `last_speech_ended_time`).
+  - Active suppression of microphone input while Piper is speaking, with 500ms post-speech cooldown.
+  - Duplicate voice command debouncing (1.5s cooldown).
+
+## [0.5.0] - Input-Safety Redesign, Profile Isolation & Exclusivity Lock
+
+### Added
+- **Strict Profile Architecture** (`accessos.utils.LaunchProfile`):
+  - `host-safe` (Default): Bare-metal host safe, zero OS injection, purely in-memory virtual cursor.
+  - `camera-preview`: Camera preview only, dwell clicking and OS injection disabled.
+  - `vm-real`: Permitted exclusively inside verified hypervisor virtual machines or live-boot sessions.
+- **Single-Instance Exclusivity Lock** (`accessos.utils.SingleInstanceLock`):
+  - POSIX `fcntl.flock` single-instance lock preventing multiple concurrent AccessOS processes.
+- **Isolated X11 Mouse Backend** (`accessos.engine.x11_mouse.X11MouseBackend`):
+  - Purely modular X11 injection backend isolated from base mouse classes; raises `HostSafetyViolationError` on host hardware.
+- **Transparent Virtual Cursor Overlay** (`accessos.engine.VirtualCursorOverlay`):
+  - High-contrast visual cursor, dwell ring, and click pulse rendered strictly inside the AccessOS window.
+
+---
+
 ## [0.3.0] - Phase 3: Computer Vision Head Pointer & Dwell Selection
 
 ### Safety & Verification Corrections (Phase 3 Post-Review)

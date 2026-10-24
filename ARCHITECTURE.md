@@ -1,133 +1,117 @@
-# AccessOS Architecture
+# AccessOS Architecture & System Design
 
-## Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       User / Operator                               │
-│        Keyboard · Mouse · Head · Voice · Blink · Gaze              │
-└─────────────────────┬───────────────────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────────────────┐
-│                  AccessOS Application Layer (Python)                │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                   home_screen.py                             │   │
-│  │   Header │ Pause Banner │ 6-button Grid │ Status Bar        │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
-│                         │                                           │
-│  ┌──────────┐  ┌────────▼───────┐  ┌──────────────────────────┐   │
-│  │ Settings │  │ AccessEngine   │  │    power_menu.py          │   │
-│  │ (Phase2) │  │ (Phase3+)      │  │    (placeholder P1)       │   │
-│  └──────────┘  │  HeadPointer   │  └──────────────────────────┘   │
-│                │  DwellClick    │                                   │
-│                │  VoiceControl  │  ┌──────────────────────────┐   │
-│                │  TTS           │  │    app_launcher.py        │   │
-│                │  BlinkClick    │  │    (allow-list, Popen)    │   │
-│                │  EyeGaze       │  └──────────────────────────┘   │
-│                └────────────────┘                                   │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │              Shared Infrastructure                           │   │
-│  │  utils/config.py · utils/logger.py · audio_feedback.py     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────────────────┐
-│               Linux Mint 22.3 Xfce (base OS)                       │
-│   GTK 3 · Xfce WM · PulseAudio · ALSA · V4L2 · NetworkManager     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-## Key design decisions
-
-### Why GTK 3 (not GTK 4)?
-GTK 3 is the native toolkit for Xfce on Linux Mint 22.3.  It is stable,
-well-supported, and PyGObject 3.48+ is pre-installed.  GTK 4 would require
-additional packaging effort with no benefit for Mint Xfce compatibility.
-
-### Why Vosk (not whisper.cpp) for Phase 4?
-Vosk models start at ~50 MB and run in real time on an i5 with 8 GB RAM.
-whisper.cpp requires 150 MB–1.5 GB models and is slower on CPU-only hardware.
-Vosk is the right starting point; whisper.cpp can replace it if accuracy
-proves insufficient.
-
-### Why Python venv with --system-site-packages?
-PyGObject (python3-gi) cannot be installed via pip without compiling C
-extensions against the system GTK development headers.  Using
-`--system-site-packages` gives the venv access to the system GTK bindings
-while keeping all other dependencies isolated.
-
-### Camera device assignment
-ThinkPad T480 exposes four V4L2 nodes:
-  /dev/video0  SunplusIT IR camera    ← NOT usable for face/eye tracking
-  /dev/video1  Metadata node for IR
-  /dev/video2  Chicony RGB camera     ← PRIMARY camera for AccessOS
-  /dev/video3  Metadata node for RGB
-
-All tracking code must open /dev/video2 (configurable via settings.toml).
-
-### Security model for app launching
-- `AppLauncher` uses `subprocess.Popen` with `shell=False` only.
-- Commands are allow-listed; only the six defined app keys are accepted.
-- Voice commands (Phase 4) map to named intents, never to raw shell strings.
-- Destructive actions (power off, restart) require explicit confirmation.
-
-## Data flow (Phase 3+)
+## 1. High-Level Architecture
 
 ```
-Webcam (/dev/video2)
-    └── OpenCV frame capture (30 FPS target)
-        └── MediaPipe Face Mesh
-            ├── Head pose estimation → virtual mouse pointer
-            └── Eye landmark extraction → gaze vector (Phase 5)
-
-Microphone
-    └── Vosk streaming recogniser
-        └── Intent classifier (allow-list)
-            └── Action dispatcher → home_screen / app_launcher
-
-Piper TTS
-    └── text → WAV → paplay (async thread)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              User / Operator                                │
+│       Keyboard · Mouse · Head Pointer · Voice · Blink · Eye Gaze            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                     AccessOS Application Layer (Python)                     │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                            HomeScreen                                 │  │
+│  │   Top Status Bar │ Centered macOS-Style Dock (6 Apps) │ Overlay HUD   │  │
+│  └──────────────────────┬────────────────────────────────────────────────┘  │
+│                         │                                                   │
+│  ┌──────────────────────┼─────────────────────────┬──────────────────────┐  │
+│  │                      │                         │                      │  │
+│  ▼                      ▼                         ▼                      ▼  │
+│ ┌───────────────┐ ┌────────────────────┐ ┌───────────────────┐ ┌──────────┐ │
+│ │ Engine Layer  │ │ Voice Engine       │ │ Document Reader   │ │ Settings │ │
+│ │ HeadPointer   │ │ Vosk Speech Model  │ │ Extractor (.docx, │ │ Tabs &   │ │
+│ │ DwellClicker  │ │ Piper Neural TTS   │ │   .odt, .epub,    │ │ Camera   │ │
+│ │ BlinkDetector │ │ Command Allowlist  │ │   .pdf, .txt, .md)│ │ Controls │ │
+│ │ GazeTracker   │ │ Loop Suppression   │ │ Speech Playback   │ └──────────┘ │
+│ └───────┬───────┘ └────────────────────┘ └───────────────────┘              │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                     Input Safety & Backend Router                     │  │
+│  │  Host-Safe: DryRunMouseBackend + VirtualCursorOverlay (No host grab)   │  │
+│  │  VM-Real / Live: X11MouseBackend (libXtst XTest Fake Input)           │  │
+│  │  SingleInstanceLock · Universal Emergency Stop (F12) · Esc Pause (Idem)│
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                        Shared Infrastructure                          │  │
+│  │  Config (TOML) · Logging · AudioFeedback (Earcons) · AppLauncher      │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                    Linux Mint 22.3 Xfce (Base Operating System)             │
+│   X11 Server · LightDM Autologin · ALSA / PulseAudio · V4L2 Webcams         │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Configuration layering
+---
 
-```
-Built-in Python defaults (_DEFAULTS dict)
-  ← config/accessos_defaults.toml   (project defaults, version-controlled)
-    ← ~/.config/accessos/settings.toml  (user overrides, not tracked)
-```
+## 2. Component Design & Responsibilities
 
-## File layout
+### 2.1 UI Layer
+- **`accessos.home_screen.HomeScreen`**:
+  - Implements the primary user interface: a compact top status bar and a **centered macOS-style bottom dock** showing exclusively the six allowed apps: Browser, Files, Terminal, Settings, Images, Videos.
+  - Supports full keyboard 1-D navigation (<kbd>←</kbd>, <kbd>→</kbd>, <kbd>Home</kbd>, <kbd>End</kbd>, <kbd>1</kbd>–<kbd>6</kbd>, <kbd>Enter</kbd>).
+  - Integrates the `VirtualCursorOverlay` as an unmapped, non-grabbing visual layer.
+- **`accessos.onboarding.OnboardingWizard`**:
+  - First-boot accessible configuration wizard with spoken voice guidance (Piper TTS).
+  - Guides user through modality selection (Keyboard/Mouse, Voice, Head Dwell, Head Blink, Combined).
+  - Explicit camera and microphone opt-in permissions.
 
-See README.md § Project structure.
+### 2.2 Computer Vision Engine Layer (`accessos.engine`)
+- **`HeadPointerEngine`**:
+  - Processes RGB camera frames via MediaPipe FaceLandmarker in a dedicated background worker.
+  - Normalizes nose-tip displacement relative to center baseline.
+  - Applies deadzone filtering and One-Euro adaptive smoothing to eliminate hand/head tremor jitter while retaining sub-frame dynamic response.
+- **`BlinkDetector`**:
+  - Computes Eye Aspect Ratio (EAR) across 6 landmarks per eye.
+  - Distinguishes deliberate selection blinks (200ms–800ms) from involuntary blinks (80ms–150ms).
+  - Refractory cooldown prevents repeated double-clicks.
+- **`GazeTracker`**:
+  - Normalizes pupil-to-canthus ratios to estimate gaze direction.
+  - Guided 5-point calibration workflow (Center, Top-Left, Top-Right, Bottom-Left, Bottom-Right).
+- **`DwellClicker`**:
+  - Temporal accumulation of motionless focus to trigger synthetic click events.
 
+### 2.3 Input Safety Architecture
+- **Host Development Isolation**:
+  - `LaunchProfile.HOST_SAFE`: Mandatory default on physical host machines. Operates purely in-memory with zero native mouse library loading (`libXtst` / `ctypes` excluded).
+  - `LaunchProfile.CAMERA_PREVIEW`: Camera frames rendered locally; dwell clicking and input backends completely disabled.
+  - `LaunchProfile.VM_REAL`: Permitted only inside verified hypervisor virtual machines or live-boot media. Refuses bare-metal host execution with `HostSafetyViolationError`.
+- **`SingleInstanceLock`**:
+  - POSIX `fcntl.flock` file locking ensures exactly one AccessOS instance can run at any time.
 
-## Security & Permission Boundaries (Phase 2)
-1. **Wi-Fi Credential Isolation**: Network passwords are never passed via `argv` (process command line), environment variables, logs, or persistent configuration files. Credentials are typed directly into a secure memory buffer and transmitted to `nmcli --ask` exclusively via standard input (`stdin`).
-2. **Safe Permission Failures**: Privileged actions (reboot, shutdown, session lock, brightness, audio, Wi-Fi) fail safely with explicit, human-readable error dialogs if Polkit authorization or system permission is denied.
-3. **Camera Privacy**: No video streams or frame captures are opened during discovery. Device enumeration is performed strictly via read-only sysfs queries.
+### 2.4 Offline Voice & Speech Layer (`accessos.voice`)
+- **`VoiceListener`**:
+  - Offline Vosk acoustic decoding against a strict, finite command allowlist.
+  - Zero raw audio or transcripts written to disk.
+  - Piper TTS speech suppression loop: microphone input is automatically muted while TTS is speaking, with a 500ms post-speech cooldown.
+  - Command debounce (1.5s cooldown) prevents duplicate triggers.
+- **`TTSEngine`**:
+  - Neural speech synthesis using Piper (`en_US-lessac-low.onnx`).
+  - Synthesizes in-memory and pipes directly to ALSA (`aplay`).
 
+### 2.5 Document Reader (`accessos.reader`)
+- Multi-format extraction engine (`DocumentExtractor`):
+  - `.txt`, `.md`: encoding-safe plain text.
+  - `.html`: DOM parser ignoring script and style tags.
+  - `.docx`, `.odt`: native standard-library zipfile XML parsing.
+  - `.epub`: zipfile chapter XHTML extraction.
+  - `.pdf`: layout-preserving extraction via `pdftotext`.
+- Synchronized reading controller (`DocumentReader`):
+  - Sentence splitting with abbreviation awareness.
+  - Highlights active sentence in real time with autoscroll.
 
-## Desktop Session Scope & Pointer Injection Boundary (Phase 3)
-1. **X11 Session Requirement**: `X11Mouse` uses `libX11` and `libXtst` to inject synthetic pointer movement and clicks into the active X11 display server. This matches the target Linux Mint Xfce live environment.
-2. **Wayland Refusal**: Pure Wayland sessions block synthetic input for compositor-level security isolation. `check_session_supported()` detects non-X11 environments and raises `UnsupportedSessionError`, which `HeadPointerEngine` catches to halt gracefully with user-facing guidance.
-3. **Idempotent Emergency Pause**: <kbd>Esc</kbd> acts as a one-way safety latch (`pause_control()`). Repeatedly pressing <kbd>Esc</kbd> always leaves control paused and never inadvertently resumes movement. Resuming requires an explicit action (<kbd>R</kbd>, "Resume" button, or an approved voice command in Phase 4).
+---
 
-## Offline Voice Control & Speech Synthesis Boundaries (Phase 4)
-1. **Zero-Cloud & In-Memory Audio Pipeline**:
-   - Audio is captured via ALSA `arecord` (16kHz 16-bit mono) in a dedicated streaming thread directly into memory. Zero audio recordings, buffers, or transcripts are ever written to disk or transmitted over the network.
-   - Speech synthesis uses on-device Piper TTS (`en_US-lessac-low.onnx`), streaming generated WAV frames directly from memory (`io.BytesIO`) into ALSA `aplay -q`.
-2. **Grammar-Constrained Decoding & Allowlist Isolation**:
-   - Speech recognition is constrained at the Kaldi lattice level by compiling an explicit grammar of safe phrases.
-   - The secondary `command_parser` applies strict defense-in-depth token blacklists (`rm`, `sudo`, `bash`, `delete`, `install`, `eval`, etc.).
-   - Recognized commands map strictly to internal `CommandAction` enums. Under no circumstances is voice text passed to a shell, terminal, or generic command runner.
-3. **Protected Power State Machine**:
-   - Commands requesting system power changes (`restart`, `shutdown`) enter an explicit confirmation state.
-   - Action requires a subsequent spoken `confirm` or `yes`. Saying `cancel` or waiting for the 10-second timeout safely aborts the request.
-4. **Consent, Visual HUD, & Keyboard Mute**:
-   - Voice listening is strictly disabled by default at startup and only starts upon explicit user consent.
-   - A dedicated `VoiceHUD` provides clear visual feedback of listening, muted, awaiting confirmation, and error states.
-   - <kbd>M</kbd> provides an instantaneous keyboard-accessible microphone pause/mute control.
-
+## 3. Standalone ISO Architecture
+- Built from **Linux Mint 22.3 Xfce (64-bit)** base.
+- Customizations applied directly to root SquashFS:
+  - AccessOS installed into `/opt/accessos`.
+  - Non-essential applications stripped (LibreOffice, Thunderbird, HexChat, Solitaire).
+  - Xfce desktop icons disabled so AccessOS dock is the primary focal UI.
+  - Autostart configured via LightDM live session autologin.
+  - Full AccessOS branding in GRUB, ISOLINUX, and `/etc/os-release`.

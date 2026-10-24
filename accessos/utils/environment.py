@@ -2,13 +2,15 @@
 AccessOS Virtualization & Host Safety Environment Utilities
 =============================================================
 Detects whether AccessOS is running on bare-metal host hardware
-or inside a hypervisor virtual machine (VirtualBox, QEMU/KVM, VMware).
+or inside a hypervisor virtual machine (VirtualBox, QEMU/KVM, VMware)
+or a live-boot USB environment (Casper).
 
 Safety Invariant:
   Real OS-level mouse pointer injection and synthetic clicks are
-  STRICTLY PROHIBITED on host machines to prevent physical input lockups.
-  Real injection is permitted exclusively inside verified virtual machines
-  with an active X11 session and explicit VM configuration file.
+  STRICTLY PROHIBITED on physical host development machines to prevent
+  physical input lockups. Real injection is permitted exclusively inside
+  verified virtual machines or live-boot AccessOS sessions with an active
+  X11 session and explicit VM/Live configuration file.
 """
 from __future__ import annotations
 
@@ -27,9 +29,24 @@ _DEFAULT_VM_CONFIG = Path(__file__).resolve().parent.parent.parent / "config" / 
 class HostSafetyViolationError(RuntimeError):
     """
     Raised when real mouse injection is attempted directly on host hardware
-    instead of inside a supported virtual machine.
+    instead of inside a supported virtual machine or live-boot USB session.
     """
     pass
+
+
+def is_live_boot() -> Tuple[bool, str]:
+    """
+    Detect if AccessOS is running inside a live-boot OS session (e.g. from USB or ISO).
+    """
+    if Path("/run/casper-md5check.json").exists() or Path("/cdrom/casper").exists() or Path("/rofs").exists():
+        return True, "Live Boot Session (Casper)"
+    try:
+        cmdline = Path("/proc/cmdline").read_text()
+        if "boot=casper" in cmdline:
+            return True, "Live Boot Session (boot=casper)"
+    except Exception:
+        pass
+    return False, "Not Live Boot"
 
 
 def is_running_in_vm() -> Tuple[bool, str]:
@@ -85,20 +102,24 @@ def can_use_real_mouse_injection(vm_config_path: Optional[Path] = None) -> Tuple
     Evaluate if real mouse injection is permitted in the current environment.
     Strict Policy:
       1. BARE-METAL HOST: Unconditionally BLOCKED.
-      2. VM CONFIG: Explicit VM configuration file must exist and permit real injection.
-      3. HYPERVISOR: Verified hypervisor virtual machine required.
+      2. VM OR LIVE BOOT: Permitted in verified VM or live-boot session.
+      3. VM CONFIG: Explicit VM configuration file must exist and permit real injection.
       4. DISPLAY: Active X11 display required.
     All interactive host overrides are permanently removed.
     """
     # 1. Hardware verification
-    is_vm, desc = is_running_in_vm()
-    if not is_vm:
+    is_vm, vm_desc = is_running_in_vm()
+    is_live, live_desc = is_live_boot()
+
+    if not is_vm and not is_live:
         return False, (
-            f"Blocked by Input-Safety Policy: {desc}. "
+            f"Blocked by Input-Safety Policy: {vm_desc}. "
             "Real mouse injection is disabled on physical host machines to prevent physical input lockups. "
             "Host safe profile (UI only or Camera Preview only) must be used on host hardware. "
-            "Real input testing must be performed inside a VirtualBox virtual machine."
+            "Real input testing must be performed inside a VirtualBox virtual machine or live boot USB."
         )
+
+    env_desc = vm_desc if is_vm else live_desc
 
     # 2. Configuration file verification
     config_file = vm_config_path or _DEFAULT_VM_CONFIG
@@ -111,6 +132,6 @@ def can_use_real_mouse_injection(vm_config_path: Optional[Path] = None) -> Tuple
     # 3. Session / Display verification
     display = os.environ.get("DISPLAY")
     if not display:
-        return False, "Inside VM, but no active X11 display found (DISPLAY is unset)."
+        return False, f"Inside {env_desc}, but no active X11 display found (DISPLAY is unset)."
 
-    return True, f"Permitted: running inside {desc} with active X11 display and verified VM config."
+    return True, f"Permitted: running inside {env_desc} with active X11 display and verified VM config."

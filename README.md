@@ -16,10 +16,14 @@ It is designed for people who cannot use a standard mouse-and-keyboard setup, pr
 
 | Phase | Input method |
 |-------|-------------|
-| **1** ✅ | Keyboard and mouse |
-| **3** | Head pointer + dwell-to-click (webcam) |
-| **4** | Offline voice control (Vosk) + text-to-speech (Piper) |
-| **5** | Blink-to-click + experimental eye-gaze |
+| **1** ✅ | Keyboard and mouse with high-visibility dock |
+| **2** ✅ | Accessible settings, display, volume, and camera detector |
+| **3** ✅ | Head pointer tracking + dwell-to-click (MediaPipe) |
+| **3.5/3.6** ✅ | Input-safety redesign, profile isolation, and single-instance lock |
+| **4** ✅ | Offline voice control (Vosk) + text-to-speech (Piper) |
+| **5** ✅ | Deliberate blink selection + 5-point gaze calibration |
+| **6** ✅ | Accessible Document Reader (Multi-format) + First-boot wizard |
+| **7** ✅ | Standalone bootable AccessOS.iso packaging & live USB verification |
 
 **All processing is local. No biometric data is uploaded. No cloud account is required.**
 
@@ -144,9 +148,11 @@ To prevent synthetic input events from interfering with bare-metal host hardware
 | 1 | Home screen foundation | ✅ Complete |
 | 2 | Settings & system control | ✅ Complete |
 | 3 | Head pointer + dwell selection | ✅ Complete |
+| 3.5/3.6 | Host input safety & isolation | ✅ Complete |
 | 4 | Offline voice + TTS | ✅ Complete |
-| 5 | Blink + experimental gaze | ⏳ Planned |
-| 6 | ISO packaging & validation | ⏳ Planned |
+| 5 | Deliberate blink + eye gaze | ✅ Complete |
+| 6 | Document Reader & Onboarding | ✅ Complete |
+| 7 | ISO packaging & live USB | ✅ Complete |
 
 ---
 
