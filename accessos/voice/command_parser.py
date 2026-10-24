@@ -45,6 +45,8 @@ class CommandAction(enum.Enum):
     STOP_READING      = "STOP_READING"
     READING_FASTER    = "READING_FASTER"
     READING_SLOWER    = "READING_SLOWER"
+    NEXT_SENTENCE     = "NEXT_SENTENCE"
+    PREVIOUS_SENTENCE = "PREVIOUS_SENTENCE"
 
     # Protected system actions (require spoken confirmation)
     RESTART_REQUEST   = "RESTART_REQUEST"
@@ -141,6 +143,10 @@ COMMAND_ALLOWLIST: Dict[str, CommandAction] = {
     "faster":             CommandAction.READING_FASTER,
     "read slower":        CommandAction.READING_SLOWER,
     "slower":             CommandAction.READING_SLOWER,
+    "next sentence":      CommandAction.NEXT_SENTENCE,
+    "next":               CommandAction.NEXT_SENTENCE,
+    "previous sentence":  CommandAction.PREVIOUS_SENTENCE,
+    "previous":           CommandAction.PREVIOUS_SENTENCE,
 
     # System Power (Protected)
     "restart":            CommandAction.RESTART_REQUEST,

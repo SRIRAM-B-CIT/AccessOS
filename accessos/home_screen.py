@@ -168,6 +168,7 @@ class HomeScreen(Gtk.ApplicationWindow):
             on_command=self._on_voice_command,
             on_state_changed=self._on_voice_state_changed,
         )
+        self._reader_win = None
 
         self._setup_window()
         self._load_css()
@@ -566,6 +567,11 @@ class HomeScreen(Gtk.ApplicationWindow):
     def _on_key_press(self, _widget: Gtk.Widget, event: Gdk.EventKey) -> bool:
         kv = event.keyval
 
+        # Ctrl+R: OPEN ACCESSIBLE DOCUMENT READER
+        if (event.state & Gdk.ModifierType.CONTROL_MASK) and kv in (Gdk.KEY_r, Gdk.KEY_R):
+            self._open_document_reader()
+            return True
+
         # F12: UNIVERSAL EMERGENCY STOP (shuts down all engines without needing mouse)
         if kv == Gdk.KEY_F12:
             self._emergency_stop_all()
@@ -884,3 +890,51 @@ class HomeScreen(Gtk.ApplicationWindow):
 
         elif action == CommandAction.SHUTDOWN_REQUEST:
             SystemControl.poweroff_system()
+
+        elif action == CommandAction.READ_DOCUMENT:
+            self._tts.speak("Opening Document Reader")
+            self._open_document_reader()
+
+        elif action == CommandAction.PAUSE_READING:
+            if self._reader_win:
+                self._reader_win.reader.pause()
+                self._tts.speak("Reading Paused")
+
+        elif action == CommandAction.RESUME_READING:
+            if self._reader_win:
+                self._reader_win.reader.resume()
+                self._tts.speak("Reading Resumed")
+
+        elif action == CommandAction.STOP_READING:
+            if self._reader_win:
+                self._reader_win.reader.stop()
+                self._tts.speak("Reading Stopped")
+
+        elif action == CommandAction.NEXT_SENTENCE:
+            if self._reader_win:
+                self._reader_win.reader.next_sentence()
+
+        elif action == CommandAction.PREVIOUS_SENTENCE:
+            if self._reader_win:
+                self._reader_win.reader.previous_sentence()
+
+        elif action == CommandAction.READING_FASTER:
+            if self._reader_win:
+                spd = self._reader_win.reader.increase_speed()
+                self._tts.speak(f"Speed {spd:.2f}x")
+
+        elif action == CommandAction.READING_SLOWER:
+            if self._reader_win:
+                spd = self._reader_win.reader.decrease_speed()
+                self._tts.speak(f"Speed {spd:.2f}x")
+
+    def _open_document_reader(self, initial_file=None) -> None:
+        from .reader.reader_window import DocumentReaderWindow
+        if self._reader_win is None:
+            self._reader_win = DocumentReaderWindow(tts=self._tts, initial_file=initial_file)
+            self._reader_win.connect("destroy", self._on_reader_win_closed)
+        self._reader_win.show_all()
+        self._reader_win.present()
+
+    def _on_reader_win_closed(self, _widget) -> None:
+        self._reader_win = None
