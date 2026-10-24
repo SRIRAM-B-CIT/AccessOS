@@ -2,7 +2,8 @@
 AccessOS Virtual Cursor Overlay
 ================================
 Draws a smooth, high-contrast virtual pointer reticle, dwell progress ring,
-and click ripple animation directly inside the AccessOS window.
+click ripple animations, deliberate blink feedback, and eye-gaze calibration targets
+directly inside the AccessOS window.
 
 Key Safety Feature:
   Confined 100% inside the AccessOS window.
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -26,7 +27,8 @@ log = logging.getLogger(__name__)
 class VirtualCursorOverlay(Gtk.DrawingArea):
     """
     Transparent visual cursor overlay layer for safe host dry-run mode.
-    Renders pointer position, dwell accumulation ring, and click pulse.
+    Renders pointer position, dwell accumulation ring, click pulse,
+    deliberate blink feedback, and gaze calibration targets.
     """
 
     def __init__(self) -> None:
@@ -39,13 +41,24 @@ class VirtualCursorOverlay(Gtk.DrawingArea):
         self._visible: bool = False
         self._dwell_prog: float = 0.0
 
-        # Click ripple animation state
+        # Click ripple animation state (dwell)
         self._ripple_active: bool = False
         self._ripple_x: float = 0.0
         self._ripple_y: float = 0.0
         self._ripple_radius: float = 16.0
         self._ripple_alpha: float = 0.0
         self._ripple_timer_id: Optional[int] = None
+
+        # Blink click ripple state
+        self._blink_active: bool = False
+        self._blink_x: float = 0.0
+        self._blink_y: float = 0.0
+        self._blink_radius: float = 12.0
+        self._blink_alpha: float = 0.0
+        self._blink_timer_id: Optional[int] = None
+
+        # Gaze calibration target state
+        self._calib_target: Optional[Tuple[float, float, str]] = None
 
         self.connect("draw", self._on_draw)
 
@@ -114,7 +127,104 @@ class VirtualCursorOverlay(Gtk.DrawingArea):
         self.queue_draw()
         return True
 
+    def trigger_blink_click(self, x: int, y: int) -> None:
+        """Trigger distinct deliberate blink click animation (thread-safe)."""
+        GLib.idle_add(self._apply_blink_click, float(x), float(y))
+
+    def _apply_blink_click(self, x: float, y: float) -> bool:
+        self._blink_active = True
+        self._blink_x = x
+        self._blink_y = y
+        self._blink_radius = 14.0
+        self._blink_alpha = 1.0
+        self._dwell_prog = 0.0
+
+        if self._blink_timer_id is None:
+            self._blink_timer_id = GLib.timeout_add(16, self._step_blink)
+
+        self.queue_draw()
+        return False
+
+    def _step_blink(self) -> bool:
+        self._blink_radius += 3.2
+        self._blink_alpha -= 0.05
+
+        if self._blink_alpha <= 0.0:
+            self._blink_active = False
+            self._blink_timer_id = None
+            self.queue_draw()
+            return False
+
+        self.queue_draw()
+        return True
+
+    def set_calibration_target(self, norm_x: float, norm_y: float, label: str) -> None:
+        """Display a guided gaze calibration target on the overlay."""
+        GLib.idle_add(self._apply_calibration_target, norm_x, norm_y, label)
+
+    def _apply_calibration_target(self, norm_x: float, norm_y: float, label: str) -> bool:
+        self._calib_target = (norm_x, norm_y, label)
+        self.queue_draw()
+        return False
+
+    def clear_calibration_target(self) -> None:
+        """Clear gaze calibration target."""
+        GLib.idle_add(self._apply_clear_calibration_target)
+
+    def _apply_clear_calibration_target(self) -> bool:
+        self._calib_target = None
+        self.queue_draw()
+        return False
+
     def _on_draw(self, _widget: Gtk.Widget, cr) -> bool:
+        alloc = self.get_allocation()
+        win_w, win_h = alloc.width, alloc.height
+
+        # ── 0. Gaze Calibration Target (if active) ──
+        if self._calib_target is not None:
+            nx, ny, label = self._calib_target
+            tx = nx * win_w
+            ty = ny * win_h
+
+            cr.save()
+            # Outer pulsing ring
+            cr.set_line_width(4.0)
+            cr.set_source_rgba(1.0, 0.8, 0.0, 0.85)  # Gold
+            cr.arc(tx, ty, 32.0, 0.0, 2.0 * math.pi)
+            cr.stroke()
+
+            # Inner bullseye ring
+            cr.set_line_width(2.5)
+            cr.set_source_rgba(0.0, 0.85, 1.0, 0.95)  # Cyan
+            cr.arc(tx, ty, 16.0, 0.0, 2.0 * math.pi)
+            cr.stroke()
+
+            # Center focal dot
+            cr.set_source_rgba(1.0, 1.0, 1.0, 1.0)
+            cr.arc(tx, ty, 5.0, 0.0, 2.0 * math.pi)
+            cr.fill()
+
+            # Crosshairs
+            cr.set_line_width(2.0)
+            cr.set_source_rgba(1.0, 0.8, 0.0, 0.9)
+            cr.move_to(tx - 40, ty)
+            cr.line_to(tx - 34, ty)
+            cr.move_to(tx + 34, ty)
+            cr.line_to(tx + 40, ty)
+            cr.move_to(tx, ty - 40)
+            cr.line_to(tx, ty - 34)
+            cr.move_to(tx, ty + 34)
+            cr.line_to(tx, ty + 40)
+            cr.stroke()
+
+            # Label banner
+            cr.select_font_face("Sans", 0, 1)
+            cr.set_font_size(14.0)
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.95)
+            cr.move_to(tx - 50, ty + 50)
+            cr.show_text(f"Look here: {label}")
+            cr.restore()
+
         if not self._visible or self._cx < 0 or self._cy < 0:
             return False
 
@@ -162,13 +272,28 @@ class VirtualCursorOverlay(Gtk.DrawingArea):
             cr.stroke()
             cr.restore()
 
-        # ── 4. Click Ripple Wave ──
+        # ── 4. Click Ripple Wave (Dwell) ──
         if self._ripple_active and self._ripple_alpha > 0.0:
             cr.save()
             cr.set_line_width(3.0)
             cr.set_source_rgba(0.0, 1.0, 0.8, self._ripple_alpha)
             cr.arc(self._ripple_x, self._ripple_y, self._ripple_radius, 0.0, 2.0 * math.pi)
             cr.stroke()
+            cr.restore()
+
+        # ── 5. Blink Click Ripple Wave (Teal / Purple distinct double ripple) ──
+        if self._blink_active and self._blink_alpha > 0.0:
+            cr.save()
+            cr.set_line_width(3.5)
+            cr.set_source_rgba(0.0, 0.9, 1.0, self._blink_alpha)
+            cr.arc(self._blink_x, self._blink_y, self._blink_radius, 0.0, 2.0 * math.pi)
+            cr.stroke()
+            # Secondary ring
+            if self._blink_radius > 18:
+                cr.set_line_width(2.0)
+                cr.set_source_rgba(0.8, 0.4, 1.0, self._blink_alpha * 0.7)
+                cr.arc(self._blink_x, self._blink_y, self._blink_radius - 8, 0.0, 2.0 * math.pi)
+                cr.stroke()
             cr.restore()
 
         return False

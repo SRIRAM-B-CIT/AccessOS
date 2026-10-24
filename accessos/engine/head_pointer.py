@@ -1,15 +1,16 @@
 """
-AccessOS Head Pointer Engine (Input-Safety Redesign)
-=====================================================
-Real-time head-pose and nose-tip tracking for hands-free cursor control.
-Processes RGB camera frames using MediaPipe FaceLandmarker, maps head
+AccessOS Head Pointer, Blink Selection & Eye Gaze Engine
+=========================================================
+Real-time head-pose, deliberate blink detection, and experimental eye-gaze tracking
+for hands-free cursor control and accessible computer interaction.
+Processes RGB camera frames using MediaPipe FaceLandmarker, maps head/eye
 displacement to pointer motion with deadzone filtering, One-Euro
-smoothing, and dwell-to-click.
+smoothing, and dwell/blink-to-click.
 
-Guarantees (Phase 3.5 Input Safety):
+Guarantees (Phase 3.5 & 3.6 Input Safety):
   - Uses DryRunMouseBackend by default for safe bare-metal host development.
   - Zero OS-level synthetic mouse events sent to host window server.
-  - Releases all synthetic buttons and resets dwell on Pause, Stop, Tracking Loss,
+  - Releases all synthetic buttons and resets dwell/blink state on Pause, Stop, Tracking Loss,
     Camera Error, Exception, and Emergency Stop.
   - Fails safely with HostSafetyViolationError if real injection is attempted on host.
 """
@@ -21,7 +22,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
@@ -31,8 +32,10 @@ from mediapipe.tasks.python import vision
 from ..settings.camera_detector import CameraDetector
 from ..utils.config import Config
 from ..utils.environment import HostSafetyViolationError, can_use_real_mouse_injection
+from .blink_detector import BlinkDetector, BlinkState
 from .dwell_clicker import DwellClicker
 from .filters import PointFilter2D
+from .gaze_tracker import CALIBRATION_TARGETS, GazeTracker
 from .mouse_backend import (
     BaseMouseBackend,
     DryRunMouseBackend,
@@ -72,10 +75,16 @@ class HeadPointerEngine:
         model_path: Path | None = None,
         mouse_backend: BaseMouseBackend | None = None,
         preview_only: bool = False,
+        pointer_mode: str | None = None,
+        click_mode: str | None = None,
         on_state_changed: Callable[[TrackingState, str], None] | None = None,
         on_metrics_updated: Callable[[float, float], None] | None = None,
         on_dwell_progress: Callable[[float, int, int], None] | None = None,
         on_click: Callable[[int, int], None] | None = None,
+        on_blink: Callable[[float], None] | None = None,
+        on_blink_state: Callable[[BlinkState], None] | None = None,
+        on_gaze_calibration_progress: Callable[[int, int, str], None] | None = None,
+        on_gaze_calibration_complete: Callable[[], None] | None = None,
     ) -> None:
         self._config = config
         if not camera_device:
@@ -98,10 +107,19 @@ class HeadPointerEngine:
         else:
             self._mouse_backend = mouse_backend or DryRunMouseBackend()
 
+        # Interaction modes: pointer_mode ("head_pointer", "eye_gaze", "combined")
+        # and click_mode ("dwell", "blink", "both", "none")
+        self._pointer_mode = pointer_mode or self._config.get("accessibility", "pointer_mode", default="head_pointer")
+        self._click_mode = click_mode or self._config.get("accessibility", "click_mode", default="dwell")
+
         self.on_state_changed = on_state_changed
         self.on_metrics_updated = on_metrics_updated
         self.on_dwell_progress = on_dwell_progress
         self.on_click = on_click
+        self.on_blink = on_blink
+        self.on_blink_state = on_blink_state
+        self.on_gaze_calibration_progress = on_gaze_calibration_progress
+        self.on_gaze_calibration_complete = on_gaze_calibration_complete
 
         self._state = TrackingState.STOPPED
         self._stop_event = threading.Event()
@@ -122,6 +140,23 @@ class HeadPointerEngine:
                 on_click=self._handle_dwell_click,
             )
 
+        # Blink detector
+        self._blink_detector = BlinkDetector(
+            ear_threshold=float(self._config.get("accessibility", "blink_ear_threshold", default=0.20)),
+            min_blink_ms=float(self._config.get("accessibility", "blink_min_ms", default=200.0)),
+            max_blink_ms=float(self._config.get("accessibility", "blink_max_ms", default=800.0)),
+            cooldown_ms=float(self._config.get("accessibility", "blink_cooldown_ms", default=600.0)),
+            on_blink=self._handle_blink_click,
+        )
+
+        # Eye gaze tracker
+        screen_w, screen_h = self._mouse_backend.screen_size
+        self._gaze_tracker = GazeTracker(
+            screen_size=(screen_w, screen_h),
+            on_calibration_progress=self._handle_gaze_calib_progress,
+            on_calibration_complete=self._handle_gaze_calib_complete,
+        )
+
         # Calibration baseline (normalized head center)
         self._calib_x = 0.5
         self._calib_y = 0.5
@@ -132,9 +167,11 @@ class HeadPointerEngine:
         self._latency_ms: float = 0.0
 
         log.info(
-            "HeadPointerEngine initialized (camera: %s, backend: %s, safe_mode: %s)",
+            "HeadPointerEngine initialized (camera: %s, backend: %s, pointer_mode: %s, click_mode: %s, safe_mode: %s)",
             self._camera_device,
             type(self._mouse_backend).__name__,
+            self._pointer_mode,
+            self._click_mode,
             not self._mouse_backend.is_real_injection,
         )
 
@@ -154,11 +191,38 @@ class HeadPointerEngine:
     def mouse_backend(self) -> BaseMouseBackend:
         return self._mouse_backend
 
+    @property
+    def pointer_mode(self) -> str:
+        return self._pointer_mode
+
+    @pointer_mode.setter
+    def pointer_mode(self, mode: str) -> None:
+        self._pointer_mode = mode
+        log.info("HeadPointerEngine pointer_mode set to: %s", mode)
+
+    @property
+    def click_mode(self) -> str:
+        return self._click_mode
+
+    @click_mode.setter
+    def click_mode(self, mode: str) -> None:
+        self._click_mode = mode
+        log.info("HeadPointerEngine click_mode set to: %s", mode)
+
+    @property
+    def blink_detector(self) -> BlinkDetector:
+        return self._blink_detector
+
+    @property
+    def gaze_tracker(self) -> GazeTracker:
+        return self._gaze_tracker
+
     def set_mouse_backend(self, backend: BaseMouseBackend) -> None:
         """Swap pointer backend (e.g. updating screen size or entering VM mode)."""
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
         self._mouse_backend = backend
+        self._gaze_tracker.set_screen_size(*backend.screen_size)
 
     def _set_state(self, new_state: TrackingState, detail: str = "") -> None:
         self._state = new_state
@@ -179,6 +243,48 @@ class HeadPointerEngine:
         if self.on_click:
             self.on_click(x, y)
 
+    def _handle_blink_click(self, duration_ms: float) -> None:
+        if self._pause_event.is_set() or self._state != TrackingState.TRACKING:
+            return
+        cur_x, cur_y = self._mouse_backend.get_position()
+        log.info("Intentional blink click triggered at (%d, %d) [duration: %.1f ms]", cur_x, cur_y, duration_ms)
+        if self._mouse_backend:
+            self._mouse_backend.click(1)
+        if self.on_blink:
+            try:
+                self.on_blink(duration_ms)
+            except Exception as exc:
+                log.error("on_blink callback failed: %s", exc)
+        if self.on_click:
+            try:
+                self.on_click(cur_x, cur_y)
+            except Exception as exc:
+                log.error("on_click callback failed: %s", exc)
+
+    def _handle_gaze_calib_progress(self, cur: int, total: int, name: str) -> None:
+        if self.on_gaze_calibration_progress:
+            try:
+                self.on_gaze_calibration_progress(cur, total, name)
+            except Exception as exc:
+                log.error("on_gaze_calibration_progress failed: %s", exc)
+
+    def _handle_gaze_calib_complete(self) -> None:
+        log.info("Gaze calibration complete callback received")
+        if self.on_gaze_calibration_complete:
+            try:
+                self.on_gaze_calibration_complete()
+            except Exception as exc:
+                log.error("on_gaze_calibration_complete failed: %s", exc)
+
+    def start_gaze_calibration(self) -> None:
+        """Start 5-point guided eye gaze calibration."""
+        self._gaze_tracker.set_screen_size(*self._mouse_backend.screen_size)
+        self._gaze_tracker.start_calibration()
+
+    def cancel_gaze_calibration(self) -> None:
+        """Cancel gaze calibration."""
+        self._gaze_tracker.cancel_calibration()
+
     def calibrate(self) -> None:
         """Mark next detected face landmark as center baseline."""
         self._calibrated = False
@@ -187,7 +293,9 @@ class HeadPointerEngine:
     def pause(self) -> None:
         """Idempotent safety pause: cancels dwell, releases buttons, halts pointer updates."""
         self._pause_event.set()
-        if self._dwell: self._dwell.reset()
+        if self._dwell:
+            self._dwell.reset()
+        self._blink_detector.reset()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
         self._set_state(TrackingState.PAUSED, "Pointer paused safely by user")
@@ -195,7 +303,9 @@ class HeadPointerEngine:
     def resume(self) -> None:
         """Explicitly resume pointer control after a pause."""
         self._pause_event.clear()
-        if self._dwell: self._dwell.reset()
+        if self._dwell:
+            self._dwell.reset()
+        self._blink_detector.reset()
         self._set_state(TrackingState.TRACKING, "Pointer control resumed")
 
     def emergency_stop(self) -> None:
@@ -204,7 +314,10 @@ class HeadPointerEngine:
         Immediately cancels dwell, releases all synthetic buttons, stops camera and worker.
         """
         log.warning("EMERGENCY STOP triggered on HeadPointerEngine")
-        if self._dwell: self._dwell.reset()
+        if self._dwell:
+            self._dwell.reset()
+        self._blink_detector.reset()
+        self._gaze_tracker.cancel_calibration()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
         self.stop()
@@ -239,10 +352,13 @@ class HeadPointerEngine:
         return True
 
     def stop(self) -> None:
-        """Stop tracking worker thread and clean up all resources."""
+        """Stop tracking worker thread and release all held buttons."""
         self._stop_event.set()
         self._pause_event.clear()
-        if self._dwell: self._dwell.reset()
+        if self._dwell:
+            self._dwell.reset()
+        self._blink_detector.reset()
+        self._gaze_tracker.cancel_calibration()
         if self._mouse_backend:
             self._mouse_backend.release_all_buttons()
 
@@ -260,6 +376,7 @@ class HeadPointerEngine:
         try:
             screen_w, screen_h = self._mouse_backend.screen_size
             center_x, center_y = screen_w // 2, screen_h // 2
+            self._gaze_tracker.set_screen_size(screen_w, screen_h)
 
             # Open verified RGB camera first before allocating heavy neural net pipeline
             num_match = re.search(r"\d+", str(self._camera_device))
@@ -312,7 +429,7 @@ class HeadPointerEngine:
 
                 # Convert BGR to RGB for MediaPipe
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp_image = python.vision.core.image.Image(
+                mp_image = python.vision.core.image.Image(
                     image_format=python.vision.core.image.ImageFormat.SRGB,
                     data=rgb_frame,
                 )
@@ -322,40 +439,63 @@ class HeadPointerEngine:
 
                 if results.face_landmarks and len(results.face_landmarks) > 0:
                     landmarks = results.face_landmarks[0]
-                    nose = landmarks[_NOSE_TIP_IDX]
 
-                    cur_x, cur_y = nose.x, nose.y
+                    # 1. Update deliberate blink detection if enabled
+                    if self._click_mode in ("blink", "both"):
+                        b_state = self._blink_detector.update(landmarks, capture_time)
+                        if self.on_blink_state:
+                            try:
+                                self.on_blink_state(b_state)
+                            except Exception:
+                                pass
 
-                    # Calibration check
-                    if not self._calibrated:
-                        self._calib_x = cur_x
-                        self._calib_y = cur_y
-                        self._calibrated = True
-                        self._filter.reset()
-                        log.info("Calibrated head center to (%.3f, %.3f)", self._calib_x, self._calib_y)
+                    # 2. Record gaze calibration samples if active
+                    if self._gaze_tracker.is_calibrating:
+                        self._gaze_tracker.record_calibration_sample(landmarks)
 
-                    # Displacement relative to calibrated center
-                    dx = cur_x - self._calib_x
-                    dy = cur_y - self._calib_y
+                    # 3. Compute cursor coordinates based on pointer mode
+                    if self._pointer_mode == "eye_gaze":
+                        gaze_est = self._gaze_tracker.estimate_gaze(landmarks, capture_time)
+                        if gaze_est is not None:
+                            target_x, target_y, _ = gaze_est
+                        else:
+                            target_x, target_y = self._mouse_backend.get_position()
+                    else:
+                        # Head pointer tracking (default and combined)
+                        nose = landmarks[_NOSE_TIP_IDX]
+                        cur_x, cur_y = nose.x, nose.y
 
-                    # Sensitivity scaling
-                    sens_x = float(self._config.get("accessibility", "sensitivity_x", default=2.2))
-                    sens_y = float(self._config.get("accessibility", "sensitivity_y", default=2.2))
+                        # Calibration check
+                        if not self._calibrated:
+                            self._calib_x = cur_x
+                            self._calib_y = cur_y
+                            self._calibrated = True
+                            self._filter.reset()
+                            log.info("Calibrated head center to (%.3f, %.3f)", self._calib_x, self._calib_y)
 
-                    raw_screen_x = center_x + (dx * sens_x * screen_w)
-                    raw_screen_y = center_y + (dy * sens_y * screen_h)
+                        # Displacement relative to calibrated center
+                        dx = cur_x - self._calib_x
+                        dy = cur_y - self._calib_y
 
-                    # Deadzone and One-Euro filtering
-                    smooth_x, smooth_y = self._filter.filter(raw_screen_x, raw_screen_y, capture_time)
+                        # Sensitivity scaling
+                        sens_x = float(self._config.get("accessibility", "sensitivity_x", default=2.2))
+                        sens_y = float(self._config.get("accessibility", "sensitivity_y", default=2.2))
 
-                    target_x = max(0, min(screen_w - 1, int(round(smooth_x))))
-                    target_y = max(0, min(screen_h - 1, int(round(smooth_y))))
+                        raw_screen_x = center_x + (dx * sens_x * screen_w)
+                        raw_screen_y = center_y + (dy * sens_y * screen_h)
+
+                        # Deadzone and One-Euro filtering
+                        smooth_x, smooth_y = self._filter.filter(raw_screen_x, raw_screen_y, capture_time)
+
+                        target_x = max(0, min(screen_w - 1, int(round(smooth_x))))
+                        target_y = max(0, min(screen_h - 1, int(round(smooth_y))))
 
                     # Move cursor via configured backend (DryRun or X11)
                     self._mouse_backend.move_to(target_x, target_y)
 
-                    # Update dwell clicker
-                    if self._dwell is not None: self._dwell.update(target_x, target_y, capture_time)
+                    # 4. Update dwell clicker if enabled
+                    if self._dwell is not None and self._click_mode in ("dwell", "both"):
+                        self._dwell.update(target_x, target_y, capture_time)
 
                     if tracking_lost_announced or self._state != TrackingState.TRACKING:
                         tracking_lost_announced = False
@@ -366,12 +506,14 @@ class HeadPointerEngine:
                     if not tracking_lost_announced:
                         tracking_lost_announced = True
                         log.warning("Face tracking lost — pointer frozen safely, buttons released")
-                        if self._dwell: self._dwell.reset()
+                        if self._dwell:
+                            self._dwell.reset()
+                        self._blink_detector.reset()
                         if self._mouse_backend:
                             self._mouse_backend.release_all_buttons()
                         self._set_state(TrackingState.LOST, "Tracking lost — keyboard/mouse active")
 
-                # Metrics calculation
+                # Metrics calculation (vision processing latency)
                 loop_end = time.monotonic()
                 latency = (loop_end - loop_start) * 1000.0
                 self._latency_ms = round(latency, 1)
@@ -417,7 +559,10 @@ class HeadPointerEngine:
                 except Exception as exc:
                     log.error("Error releasing camera: %s", exc)
 
-            if self._dwell: self._dwell.reset()
+            if self._dwell:
+                self._dwell.reset()
+            self._blink_detector.reset()
+            self._gaze_tracker.cancel_calibration()
             if self._mouse_backend:
                 try:
                     self._mouse_backend.release_all_buttons()

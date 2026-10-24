@@ -1,12 +1,14 @@
 """
 AccessOS Accessibility Engine
 ==============================
-Phase 3 & Phase 3.6: Computer vision head-pointer tracking, dwell selection,
-One-Euro smoothing, deadzone filters, safe DryRunMouseBackend, VirtualCursorOverlay,
-and isolated VM-only X11MouseBackend.
+Phase 3 & Phase 5: Computer vision head-pointer tracking, deliberate blink selection,
+experimental eye-gaze tracking, dwell selection, One-Euro smoothing, deadzone filters,
+safe DryRunMouseBackend, VirtualCursorOverlay, and isolated VM-only X11MouseBackend.
 """
 from .head_pointer import HeadPointerEngine, TrackingState
 from .dwell_clicker import DwellClicker
+from .blink_detector import BlinkDetector, BlinkState
+from .gaze_tracker import GazeTracker, GazeTarget, CALIBRATION_TARGETS
 from .filters import DeadzoneFilter, PointFilter2D, OneEuroFilter
 from .mouse_backend import (
     BaseMouseBackend,
@@ -27,6 +29,11 @@ __all__ = [
     "HeadPointerEngine",
     "TrackingState",
     "DwellClicker",
+    "BlinkDetector",
+    "BlinkState",
+    "GazeTracker",
+    "GazeTarget",
+    "CALIBRATION_TARGETS",
     "DeadzoneFilter",
     "PointFilter2D",
     "OneEuroFilter",
