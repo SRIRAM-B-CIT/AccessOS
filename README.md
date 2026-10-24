@@ -29,17 +29,37 @@ The official bootable image (3.0 GB) and checksums are hosted on Hugging Face:
 
 📦 **Hugging Face Repository**: [sri123454321/ACCESSOS](https://huggingface.co/datasets/sri123454321/ACCESSOS)
 
-| File | Size | Direct Download Link |
-| :--- | :--- | :--- |
-| **`AccessOS.iso`** | **3.0 GB** | [⬇️ Download AccessOS.iso](https://huggingface.co/datasets/sri123454321/ACCESSOS/resolve/main/AccessOS.iso?download=true) |
-| **`AccessOS.iso.sha256`** | **79 B** | [⬇️ Download Checksum](https://huggingface.co/datasets/sri123454321/ACCESSOS/resolve/main/AccessOS.iso.sha256?download=true) |
+| File | Size | Direct Download Link | Web View |
+| :--- | :--- | :--- | :--- |
+| **`AccessOS.iso`** | **3.0 GB** | [⬇️ Download AccessOS.iso](https://huggingface.co/datasets/sri123454321/ACCESSOS/resolve/main/AccessOS.iso?download=true) | [View on HF](https://huggingface.co/datasets/sri123454321/ACCESSOS/blob/main/AccessOS.iso) |
+| **`AccessOS.iso.sha256`** | **79 B** | [⬇️ Download Checksum (Raw)](https://huggingface.co/datasets/sri123454321/ACCESSOS/raw/main/AccessOS.iso.sha256) | [View on HF](https://huggingface.co/datasets/sri123454321/ACCESSOS/blob/main/AccessOS.iso.sha256) |
 
-### Integrity Verification
-Always verify the integrity of your download before writing to a USB:
+### ⚡ Quick Download via Terminal (Recommended)
+
+You can download both the ISO and checksum directly in your terminal using `wget` or `curl`:
+
 ```bash
+# 1. Download the bootable ISO (3.0 GB)
+wget --content-disposition "https://huggingface.co/datasets/sri123454321/ACCESSOS/resolve/main/AccessOS.iso?download=true" -O AccessOS.iso
+
+# 2. Download the SHA256 checksum file (79 B)
+wget "https://huggingface.co/datasets/sri123454321/ACCESSOS/raw/main/AccessOS.iso.sha256" -O AccessOS.iso.sha256
+```
+
+### 🔍 Integrity Verification
+
+Always verify the integrity of your download before writing to a USB:
+
+```bash
+# Option A: Verify using the downloaded .sha256 file
 sha256sum -c AccessOS.iso.sha256
-# Expected output:
-# AccessOS.iso: OK
+
+# Option B: Verify directly without downloading the checksum file
+echo "ba817a5c996535d70e556391f62989431544ea2cc500e7c1797c3e7a0996e734  AccessOS.iso" | sha256sum -c
+```
+Expected output:
+```text
+AccessOS.iso: OK
 ```
 
 ---
