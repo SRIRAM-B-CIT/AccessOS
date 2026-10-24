@@ -102,6 +102,135 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.0] - Standalone Bootable AccessOS ISO & Live USB Release
 
 ### Added
+- **Reproducible ISO Build Pipeline** ([1;34m[AccessOS Build][0m Starting AccessOS ISO Build Process...
+[1;34m[AccessOS Build][0m ISO root directory already present, skipping unpack.
+[1;34m[AccessOS Build][0m SquashFS root already unpacked, proceeding with customizations.
+[1;34m[AccessOS Build][0m Applying AccessOS system customizations...
+[1;34m[AccessOS Build][0m Installing AccessOS application to /opt/accessos...
+[1;34m[AccessOS Build][0m Installing /usr/local/bin/accessos launcher wrapper...
+[1;34m[AccessOS Build][0m Configuring AccessOS autostart for live user session...
+[1;34m[AccessOS Build][0m Pruning non-essential desktop launchers (LibreOffice, games, mail, chat)...
+[1;34m[AccessOS Build][0m Configuring Xfce desktop to disable desktop clutter...
+[1;34m[AccessOS Build][0m Applying AccessOS branding and wallpapers...
+[1;34m[AccessOS Build][0m Updating GRUB and ISOLINUX bootloader menus...
+[1;34m[AccessOS Build][0m Repacking casper/filesystem.squashfs using xz compression...
+Parallel mksquashfs: Using 8 processors
+Creating 4.0 filesystem on /mnt/1208154E081531E9/AccessOS/iso_build/iso_root/casper/filesystem.squashfs, block size 1048576.
+
+[/                                                             ]    0/1084   0%
+[/                                                         ]   2200/319370   0%
+[/                                                         ]   4200/319370   1%
+[\                                                         ]   5500/319370   1%
+[\                                                         ]   5600/319370   1%
+[====\                                                     ]  24000/319370   7%
+[=====-                                                    ]  33100/319370  10%
+[======/                                                   ]  35700/319370  11%
+[======\                                                   ]  38600/319370  12%
+[=======\                                                  ]  41800/319370  13%
+[=============|                                            ]  73100/319370  22%
+[=============/                                            ]  73500/319370  23%
+[====================================-                     ] 202200/319370  63%
+[===========================================/              ] 244400/319370  76%
+[==============================================\           ] 262600/319370  82%
+[=====================================================-    ] 299100/319370  93%
+[=======================================================\  ] 311000/319370  97%
+[=========================================================\] 319370/319370 100%
+
+Exportable Squashfs 4.0 filesystem, xz compressed, data block size 1048576
+	compressed data, compressed metadata, compressed fragments,
+	compressed xattrs, compressed ids
+	duplicates are removed
+Filesystem size 2601383.97 Kbytes (2540.41 Mbytes)
+	33.69% of uncompressed filesystem size (7721378.79 Kbytes)
+Inode table size 3997828 bytes (3904.13 Kbytes)
+	21.98% of uncompressed inode table size (18190289 bytes)
+Directory table size 4875694 bytes (4761.42 Kbytes)
+	35.58% of uncompressed directory table size (13704274 bytes)
+Number of duplicate files found 59044
+Number of inodes 511109
+Number of files 325521
+Number of fragments 3135
+Number of symbolic links 162243
+Number of device nodes 0
+Number of fifo nodes 0
+Number of socket nodes 0
+Number of directories 23345
+Number of hard-links 21
+Number of ids (unique uids + gids) 1
+Number of uids 1
+	root (0)
+Number of gids 1
+	root (0)
+[1;34m[AccessOS Build][0m Updating filesystem.size...
+[1;34m[AccessOS Build][0m Recalculating MD5 checksums for ISO files...
+[1;34m[AccessOS Build][0m Mastering bootable hybrid AccessOS.iso...
+[1;34m[AccessOS Build][0m Computing SHA256 checksum for AccessOS.iso...
+[1;34m[AccessOS Build][0m ======================================================================
+[1;34m[AccessOS Build][0m AccessOS ISO Build COMPLETED SUCCESSFULLY!
+[1;34m[AccessOS Build][0m Output ISO:  /mnt/1208154E081531E9/AccessOS/AccessOS.iso (3.0G)
+[1;34m[AccessOS Build][0m SHA256:      0b8da8e68fe307dc4343217536602aa10e38c7fc4ca26e657b1a067ff70ee9ea
+[1;34m[AccessOS Build][0m Checksum:    /mnt/1208154E081531E9/AccessOS/AccessOS.iso.sha256
+[1;34m[AccessOS Build][0m ======================================================================):
+  - Builds standalone hybrid bootable  from Linux Mint 22.3 Xfce base.
+  - 100% unprivileged execution on host; zero modification to host bootloader, host partitions, or installed packages.
+  - Prunes all non-essential applications (LibreOffice, Thunderbird, HexChat, Solitaire, software managers).
+  - Configures LightDM live autologin, Xfce desktop decluttering (disables desktop icons), and autostarting AccessOS in fullscreen.
+  - Integrates  launcher wrapper and  installation.
+  - Full AccessOS branding in , , GRUB, and ISOLINUX bootloaders.
+- **Accessible Document Reader** ():
+  - Multi-format text extraction engine (, , ,  via pdftotext,  via zip XML,  via zip XML,  via zip XHTML, image document notice).
+  - Synchronized sentence-level speech playback powered by Piper TTS with active sentence highlighting.
+  - Keyboard accessibility (<kbd>Ctrl+R</kbd> open, <kbd>Space</kbd> play/pause, <kbd>Left/Right</kbd> navigate, <kbd>S</kbd> stop, <kbd>O</kbd> open file, <kbd>Esc</kbd> close).
+  - Hands-free voice commands allowlisted for all reading operations.
+- **First-Boot Accessible Onboarding Wizard** ():
+  - Step-by-step accessible first-run configuration with spoken voice guidance (Piper).
+  - Modality selector (Keyboard/Mouse, Voice Only, Head Pointer + Dwell, Head Pointer + Blink, Combined).
+  - Explicit camera and microphone opt-in consent switches.
+  - High-contrast visual and font size adjustments.
+  - Can be re-launched at any time from Settings.
+- **Flashing & User Guides**:
+  - : Detailed instructions for safe flashing via , Raspberry Pi Imager, and BalenaEtcher with device identification warnings.
+  - : Complete guide covering all six dock applications, input modalities, and document reading.
+  - : In-depth documentation of safety profile isolation, idempotent pause, and emergency terminal recovery.
+  - : Step-by-step verification checklist for VM and live USB testing.
+
+## [0.6.0] - Deliberate Blink Detection & Experimental Eye Gaze Tracking
+
+### Added
+- **Deliberate Blink Selection Engine** ():
+  - Real-time Eye Aspect Ratio (EAR) computation from 6 facial landmarks per eye.
+  - Distinguishes intentional selection blinks (200ms–800ms) from natural involuntary blinks (80ms–150ms).
+  - Refractory cooldown period (600ms) to prevent accidental repeated clicks.
+  - Distinctive cyan ripple animation on VirtualCursorOverlay upon blink trigger.
+- **Experimental 2D Eye Gaze Tracker** ():
+  - Extracts iris-to-canthus normalized pupil position ratios.
+  - Guided 5-point calibration workflow (Center, Top-Left, Top-Right, Bottom-Left, Bottom-Right) with visual bullseye target rendering.
+  - One-Euro smoothing filter for gaze jitter reduction.
+  - Documented accuracy limitation disclaimer for standard integrated 720p webcams.
+- **Audio Feedback Loop Suppression**:
+  - TTS speech state tracking (, ).
+  - Active suppression of microphone input while Piper is speaking, with 500ms post-speech cooldown.
+  - Duplicate voice command debouncing (1.5s cooldown).
+
+## [0.5.0] - Input-Safety Redesign, Profile Isolation & Exclusivity Lock
+
+### Added
+- **Strict Profile Architecture** ():
+  -  (Default): Bare-metal host safe, zero OS injection, purely in-memory virtual cursor.
+  - : Camera preview only, dwell clicking and OS injection disabled.
+  - : Permitted exclusively inside verified hypervisor virtual machines or live-boot sessions.
+- **Single-Instance Exclusivity Lock** ():
+  - POSIX  single-instance lock preventing multiple concurrent AccessOS processes.
+- **Isolated X11 Mouse Backend** ():
+  - Purely modular X11 injection backend isolated from base mouse classes; raises  on host hardware.
+- **Transparent Virtual Cursor Overlay** ():
+  - High-contrast visual cursor, dwell ring, and click pulse rendered strictly inside the AccessOS window.
+
+---
+
+## [1.0.0] - Standalone Bootable AccessOS ISO & Live USB Release
+
+### Added
 - **Reproducible ISO Build Pipeline** (`scripts/build_iso.sh`):
   - Builds standalone hybrid bootable `AccessOS.iso` from Linux Mint 22.3 Xfce base.
   - 100% unprivileged execution on host; zero modification to host bootloader, host partitions, or installed packages.

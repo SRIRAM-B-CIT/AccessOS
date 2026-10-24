@@ -141,6 +141,7 @@ CLUTTER_PATTERNS=(
     "simple-scan*"
     "redshift*"
     "drawing*"
+    "ubiquity*"
 )
 for pat in "${CLUTTER_PATTERNS[@]}"; do
     find "$SQUASH_ROOT/usr/share/applications" -name "$pat" -exec rm -f {} + 2>/dev/null || true
