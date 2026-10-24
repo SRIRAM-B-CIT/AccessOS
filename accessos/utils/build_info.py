@@ -23,7 +23,7 @@ def get_git_commit() -> str:
             return res.stdout.strip()
     except Exception:
         pass
-    return '8eefcc9'
+    return '5df791d'
 
 
 def get_git_commit_short() -> str:
