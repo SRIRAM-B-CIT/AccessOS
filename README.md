@@ -55,7 +55,7 @@ Always verify the integrity of your download before writing to a USB:
 sha256sum -c AccessOS.iso.sha256
 
 # Option B: Verify directly without downloading the checksum file
-echo "ba817a5c996535d70e556391f62989431544ea2cc500e7c1797c3e7a0996e734  AccessOS.iso" | sha256sum -c
+echo "dfe8d3d29641bb35718e47c7ac4e287435c01127d5b09197a24598ce414e3fb7  AccessOS.iso" | sha256sum -c
 ```
 Expected output:
 ```text
