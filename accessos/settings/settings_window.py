@@ -221,6 +221,14 @@ class SettingsWindow(Gtk.Window):
         sens_box.pack_start(sens_scale, False, False, 0)
         page.pack_start(sens_box, False, False, 0)
 
+        # Setup Wizard Launcher
+        wiz_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        wiz_btn = Gtk.Button(label="🧙 Run First-Boot Setup Wizard")
+        wiz_btn.get_style_context().add_class("settings-action-btn")
+        wiz_btn.connect("clicked", self._on_run_setup_wizard_clicked)
+        wiz_box.pack_start(wiz_btn, False, False, 0)
+        page.pack_start(wiz_box, False, False, 10)
+
         return page
 
     def _on_mode_toggled(self, btn: Gtk.RadioButton, mode_key: str) -> None:
@@ -241,6 +249,12 @@ class SettingsWindow(Gtk.Window):
         lbl.set_markup(f'<b>Head Tracking Sensitivity:</b> <span color="#4f9eff">{val:.1f}</span>')
         self._config.set("accessibility", "head_sensitivity", value=val)
         self._config.save()
+
+    def _on_run_setup_wizard_clicked(self, _btn) -> None:
+        from ..onboarding.wizard import OnboardingWizard
+        wiz = OnboardingWizard(config=self._config, audio=self._audio)
+        wiz.show_all()
+        wiz.present()
 
     # ── Page 2: Display &amp; Theme ────────────────────────────────────────────────
 

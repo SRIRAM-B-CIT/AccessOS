@@ -176,6 +176,12 @@ class HomeScreen(Gtk.ApplicationWindow):
         self._connect_signals()
 
         self._config.add_change_listener(self._on_config_changed)
+
+        # Launch first-boot onboarding wizard if setup not completed
+        first_boot_done = self._config.get("system", "first_boot_completed", default=False)
+        if not first_boot_done and not os.environ.get("PYTEST_CURRENT_TEST"):
+            GLib.idle_add(self._launch_onboarding_wizard)
+
         log.info("HomeScreen ready with centered macOS-style dock")
 
     # ────────────────────────────────────────────────────────── setup ───
@@ -927,6 +933,13 @@ class HomeScreen(Gtk.ApplicationWindow):
             if self._reader_win:
                 spd = self._reader_win.reader.decrease_speed()
                 self._tts.speak(f"Speed {spd:.2f}x")
+
+    def _launch_onboarding_wizard(self) -> bool:
+        from .onboarding.wizard import OnboardingWizard
+        wiz = OnboardingWizard(config=self._config, tts=self._tts, audio=self._audio)
+        wiz.show_all()
+        wiz.present()
+        return False
 
     def _open_document_reader(self, initial_file=None) -> None:
         from .reader.reader_window import DocumentReaderWindow
